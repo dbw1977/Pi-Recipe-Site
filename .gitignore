@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+backend/.venv/
+.venv/
+
+# SQLite database — lives on local disk only, never committed (may contain personal data)
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+
+# Media store (originals live on the NAS in production)
+backend/media/
+
+# Node / frontend build
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+
+# Secrets & local config
+.env
+
+# OS / editor
+.DS_Store
+*.swp

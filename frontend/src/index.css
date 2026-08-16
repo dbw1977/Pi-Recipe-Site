@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-cream text-bark font-body antialiased;
+  }
+  /* Larger, comfortable tap targets and legible step text on a phone. */
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-3 font-medium
+      transition active:scale-[0.98] select-none;
+  }
+  .btn-primary {
+    @apply btn bg-ember text-white shadow-sm hover:bg-emberDark;
+  }
+  .btn-ghost {
+    @apply btn bg-white/70 text-bark ring-1 ring-black/5 hover:bg-white;
+  }
+  .card {
+    @apply rounded-2xl bg-paper shadow-sm ring-1 ring-black/5;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-sm ring-1 ring-black/10;
+  }
+}
