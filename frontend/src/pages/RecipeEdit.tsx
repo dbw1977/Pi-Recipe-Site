@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   api,
   Equipment,
@@ -166,6 +166,18 @@ export default function RecipeEdit() {
       <h1 className="font-display text-2xl font-semibold">
         {reviewing ? 'Review import' : editing ? 'Edit recipe' : 'New recipe'}
       </h1>
+
+      {!editing && !reviewing && (
+        <Link
+          to="/import"
+          className="block rounded-xl bg-ember/5 px-4 py-3 text-sm text-emberDark ring-1 ring-ember/15"
+        >
+          ✨ Rather not type it all?{' '}
+          <span className="font-semibold underline">
+            Import from a link, screenshot, voice, or Drive →
+          </span>
+        </Link>
+      )}
 
       {reviewing && (
         <div className="rounded-xl bg-herb/10 px-4 py-3 text-sm text-herb">

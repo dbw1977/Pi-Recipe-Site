@@ -30,17 +30,20 @@ export default function App() {
               Our Recipes
             </Link>
           </div>
-          <div className="flex items-center gap-2">
-            <Link to="/drafts" className="btn-ghost relative !py-2" aria-label="Drafts">
-              Drafts
-              {draftCount > 0 && (
+          <div className="flex items-center gap-1.5">
+            {draftCount > 0 && (
+              <Link to="/drafts" className="btn-ghost relative !px-3 !py-2" aria-label="Drafts">
+                Drafts
                 <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-ember px-1 text-xs font-bold text-white">
                   {draftCount}
                 </span>
-              )}
-            </Link>
-            <Link to="/import" className="btn-primary !py-2">
+              </Link>
+            )}
+            <Link to="/import" className="btn-ghost !px-3 !py-2">
               Import
+            </Link>
+            <Link to="/new" className="btn-primary !px-3 !py-2">
+              + New
             </Link>
           </div>
         </div>

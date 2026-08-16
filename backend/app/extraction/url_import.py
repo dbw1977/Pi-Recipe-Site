@@ -29,13 +29,33 @@ class ImportResult:
     duplicate: dict | None = None
 
 
+# A real browser User-Agent. recipe-scrapers' own fetch sends a bot UA that many
+# sites (Cloudflare-fronted WordPress like Plays Well With Butter) answer with 403 —
+# which otherwise looks like "site not supported". We fetch the HTML ourselves with
+# this UA, then hand it to scrape_html.
+_BROWSER_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+)
+
+
 def _try_scraper(url: str) -> dict | None:
     try:
-        from recipe_scrapers import scrape_me  # lazy
+        import requests  # lazy
+        from recipe_scrapers import scrape_html
     except ImportError:
         return None
+    # Fetch with a browser UA so sites that block bots still return their HTML.
     try:
-        s = scrape_me(url, wild_mode=True)
+        resp = requests.get(url, timeout=25, headers={"User-Agent": _BROWSER_UA})
+        resp.raise_for_status()
+        html = resp.text
+    except Exception:
+        return None
+    # wild_mode falls back to schema.org / JSON-LD extraction for sites without a
+    # dedicated recipe-scrapers plugin (most WordPress recipe sites emit it).
+    try:
+        s = scrape_html(html, org_url=url, wild_mode=True)
     except Exception:
         return None
 
@@ -154,7 +174,7 @@ def import_url(conn: sqlite3.Connection, url: str) -> ImportResult:
 def _fetch_readable_text(url: str) -> str:
     import requests
 
-    resp = requests.get(url, timeout=25, headers={"User-Agent": "PiRecipeSite/0.2"})
+    resp = requests.get(url, timeout=25, headers={"User-Agent": _BROWSER_UA})
     resp.raise_for_status()
     html = resp.text
     # Crude tag strip — Claude tolerates messy text; we just remove scripts/styles/markup.
