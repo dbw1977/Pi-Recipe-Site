@@ -174,6 +174,32 @@ def delete_recipe(conn: sqlite3.Connection, recipe_id: int) -> bool:
     return cur.rowcount > 0
 
 
+def add_media(conn: sqlite3.Connection, recipe_id: int, rows: list[dict]) -> None:
+    """Attach media rows {kind, path, caption} to a recipe (used by imports, Chunk B)."""
+    for m in rows or []:
+        conn.execute(
+            "INSERT INTO media(recipe_id, kind, path, caption) VALUES (?, ?, ?, ?)",
+            (recipe_id, m.get("kind"), m.get("path"), m.get("caption")),
+        )
+
+
+def create_draft(conn: sqlite3.Connection, data: RecipeIn, media_rows: list[dict] | None = None) -> int:
+    """Persist an imported recipe as a draft (status forced to 'draft') plus its media.
+    Nothing auto-publishes — the Drafts queue requires an explicit approval (rule 10)."""
+    data.status = "draft"
+    recipe_id = create_recipe(conn, data)
+    add_media(conn, recipe_id, media_rows or [])
+    return recipe_id
+
+
+def set_status(conn: sqlite3.Connection, recipe_id: int, status: str) -> bool:
+    cur = conn.execute(
+        "UPDATE recipe SET status = ?, updated_at = ? WHERE id = ?",
+        (status, _now(), recipe_id),
+    )
+    return cur.rowcount > 0
+
+
 # --------------------------------------------------------------------------- #
 # Read helpers
 # --------------------------------------------------------------------------- #

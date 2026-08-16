@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config
 from .migrations_runner import run_migrations
-from .routers import recipes, tags
+from .routers import drafts, imports, recipes, tags
 
 
 @asynccontextmanager
@@ -25,17 +25,26 @@ async def _lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Pi Recipe Site", version="0.1.0 (Chunk A)", lifespan=_lifespan)
+    app = FastAPI(title="Pi Recipe Site", version="0.2.0 (Chunk B)", lifespan=_lifespan)
 
     @app.get("/api/health")
     def health() -> dict:
-        return {"status": "ok", "chunk": "A"}
+        return {"status": "ok", "chunk": "B"}
 
     app.include_router(recipes.router)
     app.include_router(tags.router)
+    app.include_router(imports.router)
+    app.include_router(drafts.router)
 
+    _mount_media(app)
     _mount_frontend(app)
     return app
+
+
+def _mount_media(app: FastAPI) -> None:
+    """Serve imported/downloaded media (originals may live on the NAS in production)."""
+    root = config.media_root()
+    app.mount("/media", StaticFiles(directory=str(root)), name="media")
 
 
 def _mount_frontend(app: FastAPI) -> None:

@@ -77,6 +77,33 @@ export interface RecipeCard {
   tags: Tag[];
 }
 
+export interface DraftCard extends RecipeCard {
+  duplicate: { id: number; title: string; reason: string } | null;
+}
+
+export interface ImportStatus {
+  url: boolean;
+  claude: boolean;
+  screenshot: boolean;
+  voice: boolean;
+  voice_transcription: boolean;
+  drive_configured: boolean;
+  drive_authorized: boolean;
+}
+
+export interface ImportResponse {
+  draft: Recipe;
+  duplicate: { id: number; title: string; reason: string } | null;
+  warning?: string;
+}
+
+export interface DriveScanSummary {
+  created: { name: string; recipe_id: number }[];
+  skipped: { name: string; reason: string }[];
+  errors: { name: string; error: string }[];
+  total_seen: number;
+}
+
 export interface RecipeInput {
   title: string;
   description?: string | null;
@@ -95,11 +122,7 @@ export interface RecipeInput {
   tag_ids: number[];
 }
 
-async function req<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -111,6 +134,20 @@ async function req<T>(url: string, options?: RequestInit): Promise<T> {
   }
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+async function req<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  return handle<T>(res);
+}
+
+// Multipart POST (files) — let the browser set the multipart boundary itself.
+async function postForm<T>(url: string, form: FormData): Promise<T> {
+  const res = await fetch(url, { method: 'POST', body: form });
+  return handle<T>(res);
 }
 
 export const api = {
@@ -135,5 +172,45 @@ export const api = {
   },
   listTags(): Promise<TagCategory[]> {
     return req<TagCategory[]>('/api/tags');
+  },
+
+  // --- Imports (Chunk B) ---
+  importStatus(): Promise<ImportStatus> {
+    return req<ImportStatus>('/api/imports/status');
+  },
+  importUrl(url: string): Promise<ImportResponse> {
+    return req<ImportResponse>('/api/imports/url', { method: 'POST', body: JSON.stringify({ url }) });
+  },
+  importScreenshot(file: File, extra: File[] = []): Promise<ImportResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    extra.forEach((f) => form.append('extra', f));
+    return postForm<ImportResponse>('/api/imports/screenshot', form);
+  },
+  importVoice(file: File, photos: File[] = []): Promise<ImportResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    photos.forEach((f) => form.append('photos', f));
+    return postForm<ImportResponse>('/api/imports/voice', form);
+  },
+  driveScan(): Promise<DriveScanSummary> {
+    return req<DriveScanSummary>('/api/imports/drive/scan', { method: 'POST' });
+  },
+  driveAuthUrl(): Promise<{ url: string; redirect_uri: string }> {
+    return req<{ url: string; redirect_uri: string }>('/api/imports/drive/auth-url');
+  },
+
+  // --- Drafts queue (Chunk B) ---
+  listDrafts(): Promise<DraftCard[]> {
+    return req<DraftCard[]>('/api/drafts');
+  },
+  approveDraft(id: number): Promise<Recipe> {
+    return req<Recipe>(`/api/drafts/${id}/approve`, { method: 'POST' });
+  },
+  approveAll(ids?: number[]): Promise<{ approved: number[]; count: number }> {
+    return req('/api/drafts/approve-all', { method: 'POST', body: JSON.stringify({ ids: ids ?? null }) });
+  },
+  discardDraft(id: number): Promise<void> {
+    return req<void>(`/api/drafts/${id}`, { method: 'DELETE' });
   },
 };

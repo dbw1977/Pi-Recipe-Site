@@ -12,6 +12,11 @@ backend/data/*.db-shm
 # Media store (originals live on the NAS in production)
 backend/media/
 
+# Google OAuth token / client secrets (never commit credentials)
+backend/data/*.json
+google_token.json
+client_secret*.json
+
 # Node / frontend build
 frontend/node_modules/
 frontend/dist/

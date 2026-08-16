@@ -1,6 +1,17 @@
 fastapi>=0.110,<1.0
 uvicorn[standard]>=0.27,<1.0
 pydantic>=2.5,<3.0
+python-multipart>=0.0.9          # file uploads (screenshot / voice import)
+
+# --- Chunk B: imports ---
+anthropic>=0.39,<1.0             # Claude API: vision, structuring, tagging
+recipe-scrapers>=15.0            # URL import (structured extraction from recipe sites)
+requests>=2.31                   # fetch pages / download hero images locally
+# Google Drive import (optional at runtime — imported lazily; only needed for the Drive path)
+google-api-python-client>=2.100
+google-auth>=2.30
+google-auth-oauthlib>=1.2
+
 # Test-only, but light enough to keep in one file for a two-person project.
 pytest>=8.0,<9.0
 httpx>=0.27,<1.0

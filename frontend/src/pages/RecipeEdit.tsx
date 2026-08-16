@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   api,
   Equipment,
@@ -9,6 +9,7 @@ import {
   Step,
   TagCategory,
 } from '../api';
+import { scaleQuantity } from '../lib/scaling';
 
 const COMMON_UNITS = [
   'tsp', 'tbsp', 'cup', 'fl oz', 'pint', 'quart',
@@ -21,10 +22,18 @@ const emptyIngredient = (): Ingredient => ({
 });
 const emptyGroup = (name = ''): Group => ({ name: name || null, ingredients: [emptyIngredient()] });
 
+interface ReviewState {
+  review?: boolean;
+  duplicate?: { id: number; title: string; reason: string } | null;
+  warning?: string;
+}
+
 export default function RecipeEdit() {
   const { id } = useParams();
   const editing = Boolean(id);
   const navigate = useNavigate();
+  const location = useLocation();
+  const reviewState = (location.state || {}) as ReviewState;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -40,8 +49,13 @@ export default function RecipeEdit() {
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [categories, setCategories] = useState<TagCategory[]>([]);
+  const [status, setStatus] = useState('published');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewFactor, setPreviewFactor] = useState(0); // 0 = preview off
+
+  const isDraft = status === 'draft';
+  const reviewing = isDraft || reviewState.review;
 
   useEffect(() => {
     api.listTags().then(setCategories).catch(() => setCategories([]));
@@ -63,15 +77,15 @@ export default function RecipeEdit() {
       setSteps(r.steps);
       setEquipment(r.equipment);
       setTagIds(r.tags.map((t) => t.id));
+      setStatus(r.status);
     });
   }, [editing, id]);
 
-  // -- group / ingredient mutations -------------------------------------------------
+  // -- mutations --------------------------------------------------------------------
   const updateGroup = (gi: number, patch: Partial<Group>) =>
     setGroups((gs) => gs.map((g, i) => (i === gi ? { ...g, ...patch } : g)));
   const addGroup = () => setGroups((gs) => [...gs, emptyGroup()]);
   const removeGroup = (gi: number) => setGroups((gs) => gs.filter((_, i) => i !== gi));
-
   const updateIngredient = (gi: number, ii: number, patch: Partial<Ingredient>) =>
     setGroups((gs) =>
       gs.map((g, i) =>
@@ -83,63 +97,57 @@ export default function RecipeEdit() {
   const addIngredient = (gi: number) =>
     setGroups((gs) => gs.map((g, i) => (i === gi ? { ...g, ingredients: [...g.ingredients, emptyIngredient()] } : g)));
   const removeIngredient = (gi: number, ii: number) =>
-    setGroups((gs) =>
-      gs.map((g, i) => (i === gi ? { ...g, ingredients: g.ingredients.filter((_, j) => j !== ii) } : g)),
-    );
-
+    setGroups((gs) => gs.map((g, i) => (i === gi ? { ...g, ingredients: g.ingredients.filter((_, j) => j !== ii) } : g)));
   const toggleTag = (tid: number) =>
     setTagIds((prev) => (prev.includes(tid) ? prev.filter((t) => t !== tid) : [...prev, tid]));
 
-  // -- save ------------------------------------------------------------------------
-  const onSave = async () => {
+  const buildPayload = (targetStatus: string): RecipeInput => ({
+    title: title.trim(),
+    description: description.trim() || null,
+    source_type: 'manual',
+    source_name: sourceName.trim() || null,
+    source_handle: sourceHandle.trim() || null,
+    source_url: sourceUrl.trim() || null,
+    hero_image: heroImage.trim() || null,
+    servings_base: servingsBase ? Number(servingsBase) : null,
+    servings_unit: servingsUnit.trim() || null,
+    total_time: totalTime ? Number(totalTime) : null,
+    status: targetStatus,
+    groups: groups
+      .map((g, gi) => ({
+        name: g.name?.trim() ? g.name.trim() : null,
+        sort_order: gi,
+        ingredients: g.ingredients
+          .filter((ing) => ing.name.trim())
+          .map((ing, ii) => ({
+            quantity: ing.quantity === null || (ing.quantity as unknown) === '' ? null : Number(ing.quantity),
+            unit: ing.unit?.trim() ? ing.unit.trim() : null,
+            name: ing.name.trim(),
+            note: ing.note?.trim() ? ing.note.trim() : null,
+            scalable: ing.scalable ? 1 : 0,
+            sort_order: ii,
+          })),
+      }))
+      .filter((g) => g.ingredients.length > 0 || g.name),
+    steps: steps.filter((s) => s.text.trim()).map((s, i) => ({ text: s.text.trim(), sort_order: i })),
+    equipment: equipment
+      .filter((e) => e.name.trim())
+      .map((e, i) => ({ name: e.name.trim(), inferred: e.inferred ? 1 : 0, sort_order: i })),
+    tag_ids: tagIds,
+  });
+
+  const save = async (targetStatus: string) => {
     setError(null);
     if (!title.trim()) {
       setError('A title is required.');
       return;
     }
-    const payload: RecipeInput = {
-      title: title.trim(),
-      description: description.trim() || null,
-      source_type: 'manual',
-      source_name: sourceName.trim() || null,
-      source_handle: sourceHandle.trim() || null,
-      source_url: sourceUrl.trim() || null,
-      hero_image: heroImage.trim() || null,
-      servings_base: servingsBase ? Number(servingsBase) : null,
-      servings_unit: servingsUnit.trim() || null,
-      total_time: totalTime ? Number(totalTime) : null,
-      status: 'published',
-      groups: groups
-        .map((g, gi) => ({
-          name: g.name?.trim() ? g.name.trim() : null,
-          sort_order: gi,
-          ingredients: g.ingredients
-            .filter((ing) => ing.name.trim())
-            .map((ing, ii) => ({
-              quantity: ing.quantity === null || (ing.quantity as unknown) === '' ? null : Number(ing.quantity),
-              unit: ing.unit?.trim() ? ing.unit.trim() : null,
-              name: ing.name.trim(),
-              note: ing.note?.trim() ? ing.note.trim() : null,
-              scalable: ing.scalable ? 1 : 0,
-              sort_order: ii,
-            })),
-        }))
-        .filter((g) => g.ingredients.length > 0 || g.name),
-      steps: steps
-        .filter((s) => s.text.trim())
-        .map((s, i) => ({ text: s.text.trim(), sort_order: i })),
-      equipment: equipment
-        .filter((e) => e.name.trim())
-        .map((e, i) => ({ name: e.name.trim(), inferred: e.inferred ? 1 : 0, sort_order: i })),
-      tag_ids: tagIds,
-    };
-
     setSaving(true);
     try {
-      const saved = editing
-        ? await api.updateRecipe(Number(id), payload)
-        : await api.createRecipe(payload);
-      navigate(`/recipe/${saved.id}`);
+      const payload = buildPayload(targetStatus);
+      const saved = editing ? await api.updateRecipe(Number(id), payload) : await api.createRecipe(payload);
+      // Published → view it; kept as draft → back to the queue.
+      navigate(targetStatus === 'published' ? `/recipe/${saved.id}` : '/drafts');
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -147,15 +155,35 @@ export default function RecipeEdit() {
     }
   };
 
+  const discard = async () => {
+    if (!id || !confirm('Discard this draft? It will not be saved.')) return;
+    await api.discardDraft(Number(id));
+    navigate('/drafts');
+  };
+
   return (
     <div className="space-y-4">
       <h1 className="font-display text-2xl font-semibold">
-        {editing ? 'Edit recipe' : 'New recipe'}
+        {reviewing ? 'Review import' : editing ? 'Edit recipe' : 'New recipe'}
       </h1>
 
-      {error && (
-        <div className="rounded-xl bg-ember/10 px-4 py-3 text-sm text-emberDark">{error}</div>
+      {reviewing && (
+        <div className="rounded-xl bg-herb/10 px-4 py-3 text-sm text-herb">
+          Check everything below, fix anything the importer got wrong, then <strong>Approve</strong> to
+          publish. Nothing is saved to the library until you do.
+        </div>
       )}
+      {reviewState.warning && (
+        <div className="rounded-xl bg-ember/10 px-4 py-3 text-sm text-emberDark">
+          {reviewState.warning}
+        </div>
+      )}
+      {reviewState.duplicate && (
+        <div className="rounded-xl bg-ember/10 px-4 py-3 text-sm text-emberDark">
+          ⚠ Possible duplicate ({reviewState.duplicate.reason}) of “{reviewState.duplicate.title}”.
+        </div>
+      )}
+      {error && <div className="rounded-xl bg-ember/10 px-4 py-3 text-sm text-emberDark">{error}</div>}
 
       {/* Basics */}
       <section className="card space-y-3 p-4">
@@ -199,9 +227,7 @@ export default function RecipeEdit() {
           <button onClick={addGroup} className="text-sm font-medium text-ember">+ group</button>
         </div>
         <datalist id="units">
-          {COMMON_UNITS.map((u) => (
-            <option key={u} value={u} />
-          ))}
+          {COMMON_UNITS.map((u) => <option key={u} value={u} />)}
         </datalist>
 
         {groups.map((group, gi) => (
@@ -217,7 +243,6 @@ export default function RecipeEdit() {
                 <button onClick={() => removeGroup(gi)} className="text-muted" aria-label="Remove group">✕</button>
               )}
             </div>
-
             <div className="space-y-2">
               {group.ingredients.map((ing, ii) => (
                 <div key={ii} className="rounded-lg bg-white p-2 ring-1 ring-black/5">
@@ -225,11 +250,7 @@ export default function RecipeEdit() {
                     <input
                       className={`${inputCls} w-16 text-center`}
                       value={ing.quantity ?? ''}
-                      onChange={(e) =>
-                        updateIngredient(gi, ii, {
-                          quantity: e.target.value === '' ? null : Number(e.target.value),
-                        })
-                      }
+                      onChange={(e) => updateIngredient(gi, ii, { quantity: e.target.value === '' ? null : Number(e.target.value) })}
                       inputMode="decimal"
                       placeholder="qty"
                     />
@@ -268,22 +289,81 @@ export default function RecipeEdit() {
                 </div>
               ))}
             </div>
-            <button onClick={() => addIngredient(gi)} className="mt-2 text-sm font-medium text-ember">
-              + ingredient
-            </button>
+            <button onClick={() => addIngredient(gi)} className="mt-2 text-sm font-medium text-ember">+ ingredient</button>
           </div>
         ))}
       </section>
 
-      {/* Equipment */}
-      <ListEditor
-        title="Equipment / utensils"
-        items={equipment.map((e) => e.name)}
-        onAdd={() => setEquipment((eq) => [...eq, { name: '', inferred: 0 }])}
-        onChange={(i, val) => setEquipment((eq) => eq.map((e, j) => (j === i ? { ...e, name: val } : e)))}
-        onRemove={(i) => setEquipment((eq) => eq.filter((_, j) => j !== i))}
-        placeholder="whisk, grill, mixing bowl…"
-      />
+      {/* Scaled preview (spec §6) */}
+      <section className="card p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Preview scaling</h2>
+          <div className="flex gap-1 rounded-xl bg-cream p-1">
+            {[0, 2, 3].map((f) => (
+              <button
+                key={f}
+                onClick={() => setPreviewFactor(f)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${previewFactor === f ? 'bg-ember text-white' : 'text-bark'}`}
+              >
+                {f === 0 ? 'Off' : `${f}×`}
+              </button>
+            ))}
+          </div>
+        </div>
+        {previewFactor > 0 && (
+          <div className="mt-3 space-y-3">
+            {groups.map((g, gi) => (
+              <div key={gi}>
+                {g.name && <div className="text-sm font-semibold text-herb">{g.name}</div>}
+                <ul className="text-[15px]">
+                  {g.ingredients.filter((i) => i.name.trim()).map((ing, ii) => {
+                    const s = scaleQuantity(
+                      { ...ing, quantity: ing.quantity === null || (ing.quantity as unknown) === '' ? null : Number(ing.quantity) },
+                      previewFactor,
+                    );
+                    return (
+                      <li key={ii} className="py-0.5">
+                        {s.display && <span className="font-semibold">{s.display} </span>}
+                        {ing.name}
+                        {s.rounded && <span className="ml-1 text-xs text-ember">(rounded)</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Equipment with inferred markers */}
+      <section className="card space-y-2 p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Equipment / utensils</h2>
+          <button onClick={() => setEquipment((eq) => [...eq, { name: '', inferred: 0 }])} className="text-sm font-medium text-ember">+ add</button>
+        </div>
+        {equipment.length === 0 && <p className="text-sm text-muted">None yet.</p>}
+        {equipment.map((e, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              className={inputCls}
+              value={e.name}
+              onChange={(ev) => setEquipment((eq) => eq.map((x, j) => (j === i ? { ...x, name: ev.target.value } : x)))}
+              placeholder="whisk, grill, mixing bowl…"
+            />
+            {e.inferred ? (
+              <button
+                onClick={() => setEquipment((eq) => eq.map((x, j) => (j === i ? { ...x, inferred: 0 } : x)))}
+                className="chip shrink-0 bg-cream !text-[11px] text-muted"
+                title="AI-guessed — tap to confirm"
+              >
+                guessed ✓
+              </button>
+            ) : null}
+            <button onClick={() => setEquipment((eq) => eq.filter((_, j) => j !== i))} className="px-1 text-muted" aria-label="Remove">✕</button>
+          </div>
+        ))}
+      </section>
 
       {/* Steps */}
       <ListEditor
@@ -302,18 +382,12 @@ export default function RecipeEdit() {
         <h2 className="text-lg font-semibold">Tags</h2>
         {categories.filter((c) => c.tags.length).map((cat) => (
           <div key={cat.id}>
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-              {cat.name}
-            </div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">{cat.name}</div>
             <div className="flex flex-wrap gap-2">
               {cat.tags.map((tag) => {
                 const on = tagIds.includes(tag.id);
                 return (
-                  <button
-                    key={tag.id}
-                    onClick={() => toggleTag(tag.id)}
-                    className={`chip ${on ? 'bg-herb text-white ring-herb' : 'bg-white'}`}
-                  >
+                  <button key={tag.id} onClick={() => toggleTag(tag.id)} className={`chip ${on ? 'bg-herb text-white ring-herb' : 'bg-white'}`}>
                     {tag.name}
                   </button>
                 );
@@ -323,10 +397,29 @@ export default function RecipeEdit() {
         ))}
       </section>
 
+      {/* Actions */}
       <div className="sticky bottom-4 flex gap-2">
-        <button onClick={onSave} disabled={saving} className="btn-primary flex-1 shadow-lg">
-          {saving ? 'Saving…' : editing ? 'Save changes' : 'Save recipe'}
-        </button>
+        {reviewing ? (
+          <>
+            <button onClick={() => save('published')} disabled={saving} className="btn-primary flex-1 shadow-lg">
+              {saving ? 'Saving…' : 'Approve & publish'}
+            </button>
+            {editing && (
+              <button onClick={() => save('draft')} disabled={saving} className="btn-ghost shadow-lg">
+                Save draft
+              </button>
+            )}
+            {editing && (
+              <button onClick={discard} disabled={saving} className="btn-ghost !text-ember shadow-lg">
+                Discard
+              </button>
+            )}
+          </>
+        ) : (
+          <button onClick={() => save('published')} disabled={saving} className="btn-primary flex-1 shadow-lg">
+            {saving ? 'Saving…' : editing ? 'Save changes' : 'Save recipe'}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -338,9 +431,7 @@ const inputCls =
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-        {label}
-      </span>
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">{label}</span>
       {children}
     </label>
   );
@@ -349,14 +440,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function ListEditor({
   title, items, onAdd, onChange, onRemove, placeholder, numbered, multiline,
 }: {
-  title: string;
-  items: string[];
-  onAdd: () => void;
-  onChange: (i: number, val: string) => void;
-  onRemove: (i: number) => void;
-  placeholder: string;
-  numbered?: boolean;
-  multiline?: boolean;
+  title: string; items: string[]; onAdd: () => void; onChange: (i: number, val: string) => void;
+  onRemove: (i: number) => void; placeholder: string; numbered?: boolean; multiline?: boolean;
 }) {
   return (
     <section className="card space-y-2 p-4">
@@ -367,11 +452,7 @@ function ListEditor({
       {items.length === 0 && <p className="text-sm text-muted">None yet.</p>}
       {items.map((val, i) => (
         <div key={i} className="flex items-start gap-2">
-          {numbered && (
-            <span className="mt-2.5 w-5 shrink-0 text-right text-sm font-semibold text-muted">
-              {i + 1}.
-            </span>
-          )}
+          {numbered && <span className="mt-2.5 w-5 shrink-0 text-right text-sm font-semibold text-muted">{i + 1}.</span>}
           {multiline ? (
             <textarea className={inputCls} rows={2} value={val} onChange={(e) => onChange(i, e.target.value)} placeholder={placeholder} />
           ) : (

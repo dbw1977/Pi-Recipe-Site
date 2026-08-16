@@ -139,8 +139,44 @@ device can't, use the Pi's LAN IP as a fallback.
 3. **Structured ingredients only** and **kitchen-friendly quantities only** in scaled output.
 4. **LAN-only, plain HTTP**, no auth in v1.
 
-## Not in this chunk (by design)
+## Chunk B — imports (URL · screenshot · voice · Drive)
 
-Imports (URL / screenshot / voice / Drive) and any Claude/Anthropic call → **Chunk B**.
+Recipes now flow in from four sources, each landing as a **draft** in the Drafts queue for
+review before it joins the library (nothing auto-publishes). Every path is **optional and
+fails gracefully**: a missing credential disables only that path, with a clear message.
+
+Enable them by adding keys to `.env` (see `.env.example`). Easiest first:
+
+| Path | Needs | Notes |
+|---|---|---|
+| **URL** | *nothing* for supported sites | Uses `recipe-scrapers` offline. Unsupported sites use the Claude fallback (needs the Anthropic key). |
+| **Screenshot** | `ANTHROPIC_API_KEY` | Claude vision reads the image (Instagram etc.). |
+| **Voice** | `WHISPER_BIN` + `WHISPER_MODEL` + `ANTHROPIC_API_KEY` | whisper.cpp transcribes locally, Claude structures. |
+| **Google Drive** | `GOOGLE_CLIENT_SECRETS` + `DRIVE_FOLDER_ID` | One-time OAuth, then a manual "Scan" button. |
+
+**Set up the Anthropic key** (unlocks screenshot + fallbacks):
+1. Create a key at console.anthropic.com and add a little credit (imports cost fractions of a cent).
+2. Put `ANTHROPIC_API_KEY=sk-ant-...` in `.env`, then `sudo systemctl restart recipes`.
+
+**Set up whisper.cpp** (voice), on the Pi:
+```bash
+git clone https://github.com/ggerganov/whisper.cpp && cd whisper.cpp
+cmake -B build && cmake --build build -j --config Release
+bash ./models/download-ggml-model.sh base.en
+```
+Then set `WHISPER_BIN=.../build/bin/whisper-cli` and `WHISPER_MODEL=.../models/ggml-base.en.bin`.
+(ffmpeg is used to convert audio to 16 kHz if it's installed: `sudo apt install ffmpeg`.)
+
+**Set up Google Drive** (bulk loader): create OAuth **Desktop app** credentials in Google
+Cloud, download `client_secret.json`, set `GOOGLE_CLIENT_SECRETS` + `DRIVE_FOLDER_ID`, then
+click **Connect Google Drive** in the app (Import page) once to authorize. The OAuth redirect
+URI to register is `http://<host>/api/imports/drive/callback`. The scan reads **only** that
+folder and skips files it already imported.
+
+**Testing Chunk B:** URL — paste the Plays Well With Butter marinade; Screenshot — the
+steak-salad Instagram image (spec §13); the Drafts queue supports per-row Approve / Edit /
+Discard and **Approve-all**; likely duplicates are flagged in the queue.
+
+## Not in these chunks (by design)
+
 Recipe of the Week, thumbnails, backups → **Chunk C**. Places / eating-out → **Chunk D**.
-No external network calls happen anywhere in Chunk A.

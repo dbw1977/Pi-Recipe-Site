@@ -1,9 +1,20 @@
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { api } from './api';
 
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const onHome = location.pathname === '/';
+  const [draftCount, setDraftCount] = useState(0);
+
+  // Keep the drafts badge current as you navigate (cheap; two-user LAN app).
+  useEffect(() => {
+    api
+      .listDrafts()
+      .then((d) => setDraftCount(d.length))
+      .catch(() => setDraftCount(0));
+  }, [location.pathname]);
 
   return (
     <div className="min-h-screen">
@@ -11,11 +22,7 @@ export default function App() {
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             {!onHome && (
-              <button
-                onClick={() => navigate(-1)}
-                aria-label="Back"
-                className="btn-ghost !px-3 !py-2"
-              >
+              <button onClick={() => navigate(-1)} aria-label="Back" className="btn-ghost !px-3 !py-2">
                 ‹
               </button>
             )}
@@ -23,9 +30,19 @@ export default function App() {
               Our Recipes
             </Link>
           </div>
-          <Link to="/new" className="btn-primary !py-2">
-            + Add
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link to="/drafts" className="btn-ghost relative !py-2" aria-label="Drafts">
+              Drafts
+              {draftCount > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-ember px-1 text-xs font-bold text-white">
+                  {draftCount}
+                </span>
+              )}
+            </Link>
+            <Link to="/import" className="btn-primary !py-2">
+              Import
+            </Link>
+          </div>
         </div>
       </header>
 

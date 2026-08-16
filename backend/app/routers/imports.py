@@ -1,0 +1,175 @@
+"""Import endpoints — the four ingestion paths, all landing as drafts (spec §5, §6).
+
+Missing credentials disable only the affected path with a clear 503 message; nothing
+crashes and nothing auto-publishes (CLAUDE.md rules 8 & 10).
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
+
+from .. import crud
+from ..db import get_connection, transaction
+from ..extraction import claude, drive, url_import, voice
+from ..extraction.errors import ExtractionError, FeatureUnavailable
+from ..extraction.screenshot import import_screenshot
+from ..extraction.duplicates import find_duplicate
+from ..schemas import RecipeIn
+
+router = APIRouter(prefix="/api/imports", tags=["imports"])
+
+
+# --------------------------------------------------------------------------- #
+# Shared persistence
+# --------------------------------------------------------------------------- #
+def _persist(result: url_import.ImportResult) -> dict:
+    with transaction() as conn:
+        dup = find_duplicate(
+            conn, title=result.recipe.title, source_url=result.recipe.source_url,
+            statuses=("published", "draft"),
+        )
+        rid = crud.create_draft(conn, result.recipe, result.media)
+        draft = crud.get_recipe(conn, rid)
+    return {"draft": draft.model_dump(), "duplicate": dup}
+
+
+def _persist_stub(err: ExtractionError, *, source_type: str, source_url: str | None = None) -> dict:
+    """Claude returned unparseable output — still open a review draft with what we have
+    so the user can finish it (spec §10)."""
+    stub = RecipeIn(
+        title="Imported draft — needs review",
+        description=(err.partial.get("raw") or "")[:2000] or None,
+        source_type=source_type,
+        source_url=source_url,
+        status="draft",
+    )
+    with transaction() as conn:
+        rid = crud.create_draft(conn, stub, [])
+        draft = crud.get_recipe(conn, rid)
+    return {"draft": draft.model_dump(), "duplicate": None, "warning": err.message}
+
+
+# --------------------------------------------------------------------------- #
+# Status — which paths are enabled (drives the Import UI)
+# --------------------------------------------------------------------------- #
+@router.get("/status")
+def status() -> dict:
+    return {
+        "url": True,  # offline scraper always works; AI fallback if Claude is on
+        "claude": claude.available(),
+        "screenshot": claude.available(),
+        "voice_transcription": voice.transcription_available(),
+        "voice": voice.transcription_available() and claude.available(),
+        "drive_configured": drive.available(),
+        "drive_authorized": drive.available() and drive.authorized(),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# URL
+# --------------------------------------------------------------------------- #
+class UrlIn(BaseModel):
+    url: str
+
+
+@router.post("/url")
+def import_url_endpoint(payload: UrlIn):
+    conn = get_connection()
+    try:
+        result = url_import.import_url(conn, payload.url)
+    except FeatureUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.message)
+    except ExtractionError as e:
+        return _persist_stub(e, source_type="url", source_url=payload.url)
+    finally:
+        conn.close()
+    return _persist(result)
+
+
+# --------------------------------------------------------------------------- #
+# Screenshot (multipart: screenshot + optional extra photos/video)
+# --------------------------------------------------------------------------- #
+@router.post("/screenshot")
+async def import_screenshot_endpoint(
+    file: UploadFile = File(...),
+    extra: list[UploadFile] | None = File(default=None),
+):
+    image_bytes = await file.read()
+    extra_media = []
+    for uf in extra or []:
+        data = await uf.read()
+        ctype = uf.content_type or ""
+        kind = "video" if ctype.startswith("video/") else "image"
+        extra_media.append((data, ctype, kind))
+
+    conn = get_connection()
+    try:
+        result = import_screenshot(conn, image_bytes, file.content_type, extra_media=extra_media)
+    except FeatureUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.message)
+    except ExtractionError as e:
+        return _persist_stub(e, source_type="instagram")
+    finally:
+        conn.close()
+    return _persist(result)
+
+
+# --------------------------------------------------------------------------- #
+# Voice (multipart: audio + optional photos)
+# --------------------------------------------------------------------------- #
+@router.post("/voice")
+async def import_voice_endpoint(
+    file: UploadFile = File(...),
+    photos: list[UploadFile] | None = File(default=None),
+):
+    audio_bytes = await file.read()
+    photo_data = [(await p.read(), p.content_type) for p in (photos or [])]
+
+    conn = get_connection()
+    try:
+        result = voice.import_voice(conn, audio_bytes, file.content_type, photos=photo_data)
+    except FeatureUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.message)
+    except ExtractionError as e:
+        return _persist_stub(e, source_type="voice")
+    finally:
+        conn.close()
+    return _persist(result)
+
+
+# --------------------------------------------------------------------------- #
+# Google Drive
+# --------------------------------------------------------------------------- #
+@router.post("/drive/scan")
+def drive_scan_endpoint():
+    try:
+        with transaction() as conn:
+            def persist(recipe: RecipeIn, media_rows: list[dict]) -> int:
+                return crud.create_draft(conn, recipe, media_rows)
+
+            summary = drive.scan(conn, persist)
+    except FeatureUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.message)
+    return summary
+
+
+@router.get("/drive/auth-url")
+def drive_auth_url_endpoint(request: Request):
+    redirect_uri = str(request.url_for("drive_callback"))
+    try:
+        return {"url": drive.auth_url(redirect_uri), "redirect_uri": redirect_uri}
+    except FeatureUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.message)
+
+
+@router.get("/drive/callback", name="drive_callback")
+def drive_callback(request: Request, code: str | None = None, error: str | None = None):
+    if error or not code:
+        return RedirectResponse("/import?drive=error")
+    redirect_uri = str(request.url_for("drive_callback"))
+    try:
+        drive.finish_auth(code, redirect_uri)
+    except FeatureUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.message)
+    return RedirectResponse("/import?drive=connected")
