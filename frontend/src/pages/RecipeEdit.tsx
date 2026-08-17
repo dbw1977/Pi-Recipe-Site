@@ -391,11 +391,19 @@ export default function RecipeEdit() {
 
       {/* Tags */}
       <section className="card space-y-3 p-4">
-        <h2 className="text-lg font-semibold">Tags</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Tags</h2>
+          {reviewing && tagIds.length > 0 && (
+            <button onClick={() => setTagIds([])} className="text-sm font-medium text-ember">
+              Clear all
+            </button>
+          )}
+        </div>
         {reviewing && (
           <p className="-mt-1 text-sm text-muted">
-            Auto-selected from the recipe — highlighted ones are on. Tap to add or remove; no
-            need to fuss over them.
+            Auto-selected from the recipe. The <span className="font-medium text-herb">highlighted</span>{' '}
+            ones ({tagIds.length}) are what get saved when you <strong>Approve</strong> — tap any to
+            remove it, tap a plain one to add it, or Clear all to start over.
           </p>
         )}
         {categories.filter((c) => c.tags.length).map((cat) => (
@@ -406,7 +414,7 @@ export default function RecipeEdit() {
                 const on = tagIds.includes(tag.id);
                 return (
                   <button key={tag.id} onClick={() => toggleTag(tag.id)} className={`chip ${on ? 'bg-herb text-white ring-herb' : 'bg-white'}`}>
-                    {tag.name}
+                    {on && reviewing ? '✓ ' : ''}{tag.name}
                   </button>
                 );
               })}
