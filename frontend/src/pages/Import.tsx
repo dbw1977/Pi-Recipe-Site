@@ -83,7 +83,10 @@ function UrlCard({ onImported }: { onImported: (r: ImportResponse) => void }) {
   };
 
   return (
-    <Card title="From a link" subtitle="Paste a recipe URL. Supported sites work with no setup.">
+    <Card
+      title="From a link"
+      subtitle="Paste a recipe URL. Recipe sites work with no setup; Reddit posts use the AI key."
+    >
       <div className="flex gap-2">
         <input
           className="w-full rounded-lg border-0 bg-white px-3 py-2.5 shadow-sm ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-ember/40"

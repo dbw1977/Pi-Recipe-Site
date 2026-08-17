@@ -134,10 +134,107 @@ def _scraped_to_extracted(d: dict) -> ExtractedRecipe:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Reddit — no structured recipe data, so read the post's JSON and let Claude
+# structure the free text (post body, or the top comment when the body is thin).
+# --------------------------------------------------------------------------- #
+_REDDIT_UA = "PiRecipeSite/0.3 (personal recipe importer)"
+
+
+def _is_reddit(url: str) -> bool:
+    host = re.sub(r"^https?://", "", url).split("/", 1)[0].lower()
+    return host.endswith("reddit.com") or host == "redd.it" or host.endswith(".redd.it")
+
+
+def _reddit_json_url(url: str) -> str:
+    u = url.split("?")[0].split("#")[0].rstrip("/")
+    if not u.endswith(".json"):
+        u += ".json"
+    return u + "?raw_json=1"
+
+
+def _reddit_post_text(url: str) -> dict:
+    """Fetch a Reddit post as JSON and return {title, text, subreddit, author, image}."""
+    import requests
+
+    try:
+        resp = requests.get(
+            _reddit_json_url(url), timeout=25, headers={"User-Agent": _REDDIT_UA}
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        post = data[0]["data"]["children"][0]["data"]
+    except Exception as e:
+        raise FeatureUnavailable(
+            "Couldn't read that Reddit post right now (Reddit may be rate-limiting, or "
+            "the link isn't a direct post URL). Try again shortly, or paste the full post link.",
+        ) from e
+
+    title = post.get("title", "") or ""
+    body = (post.get("selftext") or "").strip()
+    subreddit = post.get("subreddit_name_prefixed") or (
+        f"r/{post.get('subreddit', '')}" if post.get("subreddit") else None
+    )
+    author = f"u/{post['author']}" if post.get("author") else None
+
+    # Hero image: a direct image post, else the generated preview.
+    image = None
+    dest = (post.get("url_overridden_by_dest") or "").lower()
+    if post.get("post_hint") == "image" or dest.endswith((".jpg", ".jpeg", ".png", ".webp")):
+        image = post.get("url_overridden_by_dest")
+    if not image:
+        try:
+            image = post["preview"]["images"][0]["source"]["url"].replace("&amp;", "&")
+        except (KeyError, IndexError, TypeError):
+            pass
+
+    # Many recipe posts (esp. r/GifRecipes) keep the recipe in the top comment, not the body.
+    comments_text = ""
+    if len(body) < 60:
+        try:
+            bodies = [
+                ch["data"]["body"]
+                for ch in data[1]["data"]["children"]
+                if ch.get("kind") == "t1"
+                and ch["data"].get("body")
+                and ch["data"].get("author") not in (None, "AutoModerator")
+            ]
+            bodies.sort(key=len, reverse=True)  # the recipe is usually the meatiest comment
+            comments_text = "\n\n".join(bodies[:2])
+        except (KeyError, IndexError, TypeError):
+            pass
+
+    text = "\n\n".join(p for p in (f"Title: {title}", body, comments_text) if p.strip())
+    return {"title": title, "text": text, "subreddit": subreddit, "author": author, "image": image}
+
+
+def _import_reddit(conn: sqlite3.Connection, url: str) -> ImportResult:
+    tag_index = load_tag_index(conn)
+    post = _reddit_post_text(url)
+    if not claude.available():
+        raise FeatureUnavailable(
+            "Reddit posts are free text with no recipe data, so importing them needs the "
+            "Anthropic key to pull out the ingredients and steps. Add ANTHROPIC_API_KEY, "
+            "or copy it in by hand.",
+            needs="ANTHROPIC_API_KEY",
+        )
+    extracted = claude.structure_text(post["text"], tag_index.allowed_by_category, kind="Reddit recipe post")
+    extracted.source_name = extracted.source_name or post["subreddit"]
+    extracted.source_handle = extracted.source_handle or post["author"]
+    hero = media.download_image(post["image"]) if post["image"] else None
+    recipe = to_recipe_input(
+        extracted, source_type="reddit", tag_index=tag_index, source_url=url, hero_image=hero
+    )
+    return ImportResult(recipe=recipe)
+
+
 def import_url(conn: sqlite3.Connection, url: str) -> ImportResult:
     url = url.strip()
     if not re.match(r"^https?://", url):
         raise FeatureUnavailable("That doesn't look like a web address (must start with http).")
+
+    if _is_reddit(url):
+        return _import_reddit(conn, url)
 
     tag_index = load_tag_index(conn)
     scraped = _try_scraper(url)
