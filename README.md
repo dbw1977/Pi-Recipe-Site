@@ -268,6 +268,34 @@ systemctl list-timers 'recipes-backup*'   # confirm next run times
 Media paths still resolve because the NAS layout is unchanged. **Test a restore once on
 purpose** — a backup you've never restored is a hope, not a backup.
 
+## Chunk D — Eat Out / Places (spec §14)
+
+A second collection: **where to eat** and **what to order there**. A top-level **Cook ⇄ Eat
+Out** toggle switches the whole UI between recipes and places; places reuse the same grid,
+search, tag filters, review/Drafts flow, media, and backups — it's additive, not a second app.
+
+- **A place is where to go + what to order.** Each place carries name, type, **city** (defaults
+  to `HOME_CITY`), address, a pasted **Google Maps link** with an **Open in Maps / Directions**
+  button, price ($–$$$$), our rating, notes, who recommended it, a **visited / want-to-try**
+  flag, and the prominent **recommended dishes** list (with a must-order star) — the eat-out
+  parallel to a recipe's ingredients.
+- **Tags:** new **City/Area**, **Place Type**, **Price** dimensions; **Cuisine is shared** with
+  recipes. City / type / price are set as fields and mirrored into tags automatically, so the
+  Eat Out grid filters by city and cuisine through the same tag mechanism recipes use. Manage
+  the whole vocabulary under **Settings → Tags**.
+- **Import:** add a place by hand, or from a **screenshot** of a friend's rec / an IG post
+  (Claude vision pulls out name, city, and the dishes mentioned). Lands as a draft to review.
+- **Share (LAN-friendly):** **Eat Out → Export a list** filters by city and produces a clean,
+  screenshot-friendly / one-page-PDF **"Our [city] picks"** to text or email. (The site stays on
+  your home network, so this is export, not a public link.)
+
+Set your home city in `.env` so new places default to it:
+```
+HOME_CITY=Gainesville
+```
+The Chunk D migration is additive and non-destructive — existing recipes are untouched.
+
 ## Not in these chunks (by design)
 
-Places / eating-out → **Chunk D**.
+- Google Places API autocomplete (v1 uses a pasted Maps link) and public link sharing
+  (needs exposing the site — deliberately deferred, spec §12).

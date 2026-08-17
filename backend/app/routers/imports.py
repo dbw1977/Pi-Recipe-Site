@@ -9,11 +9,12 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from .. import crud
+from .. import crud, crud_places
 from ..db import get_connection, transaction
 from ..extraction import claude, drive, url_import, video, voice
 from ..extraction.errors import ExtractionError, FeatureUnavailable
 from ..extraction.screenshot import import_screenshots
+from ..extraction.place_import import import_place_screenshots
 from ..extraction.duplicates import find_duplicate
 from ..schemas import RecipeIn
 
@@ -126,6 +127,47 @@ async def import_screenshot_endpoint(
     finally:
         conn.close()
     return _persist(result)
+
+
+# --------------------------------------------------------------------------- #
+# Place from screenshot(s) (Chunk D) — one or more images + optional cover photo
+# --------------------------------------------------------------------------- #
+def _persist_place(result) -> dict:
+    with transaction() as conn:
+        pid = crud_places.create_draft(conn, result.place, result.media)
+        draft = crud_places.get_place(conn, pid)
+    return {"draft": draft.model_dump(), "duplicate": None}
+
+
+@router.post("/place/screenshot")
+async def import_place_screenshot_endpoint(
+    file: list[UploadFile] = File(...),
+    extra: list[UploadFile] | None = File(default=None),
+):
+    images = [(await uf.read(), uf.content_type) for uf in file if (uf.content_type or "").startswith("image/")]
+    cover: tuple[bytes, str | None] | None = None
+    for uf in extra or []:
+        data = await uf.read()
+        ctype = uf.content_type or ""
+        if ctype.startswith("image/") and cover is None:
+            cover = (data, ctype)
+
+    conn = get_connection()
+    try:
+        result = import_place_screenshots(conn, images, cover=cover)
+    except FeatureUnavailable as e:
+        raise HTTPException(status_code=503, detail=e.message)
+    except ExtractionError as e:
+        # Open a place draft with whatever we have so the user can finish it (spec §10).
+        from ..schemas import PlaceIn
+        stub = PlaceIn(name="Imported place — needs review", our_notes=(e.partial.get("raw") or "")[:2000] or None, status="draft")
+        with transaction() as conn2:
+            pid = crud_places.create_draft(conn2, stub, [])
+            draft = crud_places.get_place(conn2, pid)
+        return {"draft": draft.model_dump(), "duplicate": None, "warning": e.message}
+    finally:
+        conn.close()
+    return _persist_place(result)
 
 
 # --------------------------------------------------------------------------- #

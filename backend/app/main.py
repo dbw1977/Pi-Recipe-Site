@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, thumbnails
 from .migrations_runner import run_migrations
-from .routers import backups, drafts, featured, imports, recipes, tags
+from .routers import backups, drafts, featured, imports, places, recipes, tags
 
 
 @asynccontextmanager
@@ -25,13 +25,14 @@ async def _lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Pi Recipe Site", version="0.3.0 (Chunk C)", lifespan=_lifespan)
+    app = FastAPI(title="Pi Recipe Site", version="0.4.0 (Chunk D)", lifespan=_lifespan)
 
     @app.get("/api/health")
     def health() -> dict:
-        return {"status": "ok", "chunk": "C"}
+        return {"status": "ok", "chunk": "D"}
 
     app.include_router(recipes.router)
+    app.include_router(places.router)
     app.include_router(tags.router)
     app.include_router(imports.router)
     app.include_router(drafts.router)

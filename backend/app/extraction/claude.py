@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 
 from .. import config
-from .draft import ExtractedRecipe, parse_extracted_json
+from .draft import ExtractedPlace, ExtractedRecipe, parse_extracted_json, parse_place_json
 from .errors import ExtractionError, FeatureUnavailable
 
 _SYSTEM = """You extract structured recipe data from messy sources (screenshots, pasted \
@@ -80,12 +80,12 @@ def _allowed_tags_block(allowed_by_category: dict[str, list[str]]) -> str:
     return "Allowed tags (choose only from these):\n" + "\n".join(lines)
 
 
-def _call(content: list[dict], *, model: str) -> str:
+def _call(content: list[dict], *, model: str, system: str = _SYSTEM) -> str:
     client = _client()
     msg = client.messages.create(
         model=model,
         max_tokens=2048,
-        system=_SYSTEM,
+        system=system,
         messages=[{"role": "user", "content": content}],
     )
     # Concatenate any text blocks in the response.
@@ -163,3 +163,59 @@ def structure_text(
         {"type": "text", "text": f"Structure this {kind} into recipe JSON per the schema:\n\n{text[:12000]}"},
     ]
     return _extract(content, allowed_by_category)
+
+
+# --------------------------------------------------------------------------- #
+# Places (Chunk D) — extract a restaurant/place recommendation from screenshot(s).
+# --------------------------------------------------------------------------- #
+_PLACE_SYSTEM = """You extract a single restaurant/place recommendation from screenshots (a \
+friend's text, an Instagram post, a review). Return ONLY one JSON object — no prose, no \
+markdown fences. Match this schema exactly:
+
+{
+  "name": string,                      // the place's name
+  "place_type": string | null,         // restaurant | cafe | bar | takeout | food truck | bakery | ...
+  "city": string | null,               // city or neighborhood if shown
+  "address": string | null,            // street address if shown
+  "our_notes": string | null,          // why it's recommended; any tips ("get there early")
+  "source_name": string | null,        // who recommended it (the account/person), if visible
+  "dishes": [ { "name": string, "note": string | null, "must_order": 0 | 1 } ],
+  "cuisine": [ string ]                // ONLY from the allowed cuisines list
+}
+
+Rules:
+- dishes are specific things to ORDER ("birria tacos", "the smash burger"), not menu sections.
+- If the source raves about one dish, set must_order=1 for it.
+- cuisine: choose ONLY from the allowed list provided; omit if unsure.
+- Never invent a city or address that isn't shown."""
+
+
+def extract_place_from_images(
+    images: list[tuple[bytes, str]],
+    allowed_cuisines: list[str],
+    *,
+    home_city: str = "",
+) -> ExtractedPlace:
+    """Extract one place recommendation from one or more screenshots."""
+    content: list[dict] = []
+    for img, media_type in images:
+        b64 = base64.standard_b64encode(img).decode("ascii")
+        content.append(
+            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}}
+        )
+    hint = "Allowed cuisines (choose only from these): " + ", ".join(allowed_cuisines)
+    if home_city:
+        hint += f"\nIf no city is shown, assume the home city: {home_city}."
+    content.append({"type": "text", "text": "Extract the place recommendation as JSON.\n" + hint})
+
+    last_raw = ""
+    for model in (config.ANTHROPIC_MODEL, config.ANTHROPIC_FALLBACK_MODEL):
+        last_raw = _call(content, model=model, system=_PLACE_SYSTEM)
+        try:
+            return parse_place_json(last_raw)
+        except ValueError:
+            continue
+    raise ExtractionError(
+        "Claude did not return valid place JSON. Opening the review screen so you can finish it.",
+        partial={"raw": last_raw[:2000]},
+    )

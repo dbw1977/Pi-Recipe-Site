@@ -98,6 +98,12 @@ export interface ImportResponse {
   warning?: string;
 }
 
+export interface PlaceImportResponse {
+  draft: Place;
+  duplicate: null;
+  warning?: string;
+}
+
 export interface DriveScanSummary {
   created: { name: string; recipe_id: number }[];
   skipped: { name: string; reason: string }[];
@@ -124,6 +130,72 @@ export interface BackupStatus {
   local: BackupEntry | null;
   drive: BackupEntry | null;
   drive_configured: boolean;
+}
+
+// --- Places (Chunk D) -------------------------------------------------------
+export interface Dish {
+  id?: number;
+  name: string;
+  note?: string | null;
+  must_order: number;
+  sort_order?: number;
+}
+
+export interface Place {
+  id: number;
+  name: string;
+  place_type: string | null;
+  city: string | null;
+  address: string | null;
+  maps_url: string | null;
+  maps_place_id: string | null;
+  phone: string | null;
+  website: string | null;
+  price_level: number | null;
+  our_rating: number | null;
+  our_notes: string | null;
+  source_name: string | null;
+  source_url: string | null;
+  hero_image: string | null;
+  visited: number;
+  status: string;
+  created_at: string | null;
+  updated_at: string | null;
+  dishes: Dish[];
+  tags: Tag[];
+}
+
+export interface PlaceCard {
+  id: number;
+  name: string;
+  place_type: string | null;
+  city: string | null;
+  price_level: number | null;
+  our_rating: number | null;
+  hero_image: string | null;
+  visited: number;
+  status: string;
+  tags: Tag[];
+}
+
+export interface PlaceInput {
+  name: string;
+  place_type?: string | null;
+  city?: string | null;
+  address?: string | null;
+  maps_url?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  price_level?: number | null;
+  our_rating?: number | null;
+  our_notes?: string | null;
+  source_name?: string | null;
+  source_url?: string | null;
+  hero_image?: string | null;
+  visited: number;
+  status?: string;
+  dishes: Dish[];
+  tag_ids: number[];
 }
 
 export interface RecipeInput {
@@ -192,8 +264,8 @@ export const api = {
   deleteRecipe(id: number): Promise<void> {
     return req<void>(`/api/recipes/${id}`, { method: 'DELETE' });
   },
-  listTags(): Promise<TagCategory[]> {
-    return req<TagCategory[]>('/api/tags');
+  listTags(collection: 'recipe' | 'place' | 'all' = 'recipe'): Promise<TagCategory[]> {
+    return req<TagCategory[]>(`/api/tags?collection=${collection}`);
   },
   createTag(categoryId: number, name: string): Promise<Tag> {
     return req<Tag>('/api/tags', {
@@ -231,6 +303,46 @@ export const api = {
   },
   driveAuthUrl(): Promise<{ url: string; redirect_uri: string }> {
     return req<{ url: string; redirect_uri: string }>('/api/imports/drive/auth-url');
+  },
+
+  // --- Places (Chunk D) ---
+  listPlaces(q?: string, tagIds?: number[], city?: string): Promise<PlaceCard[]> {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (tagIds && tagIds.length) params.set('tags', tagIds.join(','));
+    if (city) params.set('city', city);
+    const qs = params.toString();
+    return req<PlaceCard[]>(`/api/places${qs ? `?${qs}` : ''}`);
+  },
+  getPlace(id: number): Promise<Place> {
+    return req<Place>(`/api/places/${id}`);
+  },
+  createPlace(data: PlaceInput): Promise<Place> {
+    return req<Place>('/api/places', { method: 'POST', body: JSON.stringify(data) });
+  },
+  updatePlace(id: number, data: PlaceInput): Promise<Place> {
+    return req<Place>(`/api/places/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  },
+  deletePlace(id: number): Promise<void> {
+    return req<void>(`/api/places/${id}`, { method: 'DELETE' });
+  },
+  listPlaceDrafts(): Promise<PlaceCard[]> {
+    return req<PlaceCard[]>('/api/places/drafts');
+  },
+  approvePlace(id: number): Promise<Place> {
+    return req<Place>(`/api/places/${id}/approve`, { method: 'POST' });
+  },
+  listCities(): Promise<string[]> {
+    return req<string[]>('/api/places/cities');
+  },
+  placesMeta(): Promise<{ home_city: string | null; cities: string[] }> {
+    return req<{ home_city: string | null; cities: string[] }>('/api/places/meta');
+  },
+  importPlaceScreenshot(files: File[], cover?: File): Promise<PlaceImportResponse> {
+    const form = new FormData();
+    files.forEach((f) => form.append('file', f));
+    if (cover) form.append('extra', cover);
+    return postForm<PlaceImportResponse>('/api/imports/place/screenshot', form);
   },
 
   // --- Drafts queue (Chunk B) ---

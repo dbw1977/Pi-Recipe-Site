@@ -120,7 +120,8 @@ function TagManager() {
   const [adding, setAdding] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => api.listTags().then(setCats).catch(() => setCats([]));
+  // 'all' so the manager covers recipe AND place dimensions (City/Area, Place Type, Price).
+  const load = () => api.listTags('all').then(setCats).catch(() => setCats([]));
   useEffect(() => {
     load();
   }, []);

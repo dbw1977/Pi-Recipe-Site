@@ -120,3 +120,76 @@ class TagCategoryOut(BaseModel):
     id: int
     name: str
     tags: list[TagOut]
+
+
+# --------------------------------------------------------------------------- #
+# Places (Chunk D, spec §14) — a second collection: where to eat + what to order.
+# --------------------------------------------------------------------------- #
+class DishIn(BaseModel):
+    name: str
+    note: Optional[str] = None
+    must_order: int = 0
+    sort_order: int = 0
+
+
+class PlaceIn(BaseModel):
+    name: str
+    place_type: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    maps_url: Optional[str] = None
+    maps_place_id: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    price_level: Optional[int] = None      # 1–4
+    our_rating: Optional[int] = None       # 1–5
+    our_notes: Optional[str] = None
+    source_name: Optional[str] = None
+    source_url: Optional[str] = None
+    hero_image: Optional[str] = None
+    visited: int = 1                       # 1 = been there; 0 = want to try
+    status: str = "published"
+    dishes: list[DishIn] = Field(default_factory=list)
+    tag_ids: list[int] = Field(default_factory=list)  # Cuisine etc. (city/type/price mirror in)
+
+
+class DishOut(DishIn):
+    id: int
+
+
+class PlaceOut(BaseModel):
+    id: int
+    name: str
+    place_type: Optional[str]
+    city: Optional[str]
+    address: Optional[str]
+    maps_url: Optional[str]
+    maps_place_id: Optional[str]
+    phone: Optional[str]
+    website: Optional[str]
+    price_level: Optional[int]
+    our_rating: Optional[int]
+    our_notes: Optional[str]
+    source_name: Optional[str]
+    source_url: Optional[str]
+    hero_image: Optional[str]
+    visited: int
+    status: str
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    dishes: list[DishOut]
+    tags: list[TagOut]
+
+
+class PlaceCard(BaseModel):
+    """Compact shape for the Eat Out grid."""
+    id: int
+    name: str
+    place_type: Optional[str]
+    city: Optional[str]
+    price_level: Optional[int]
+    our_rating: Optional[int]
+    hero_image: Optional[str]
+    visited: int
+    status: str
+    tags: list[TagOut]

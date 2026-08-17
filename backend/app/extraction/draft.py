@@ -51,6 +51,24 @@ class ExtractedRecipe(BaseModel):
     tags: dict[str, list[str]] = Field(default_factory=dict)
 
 
+# --- Places (Chunk D) -------------------------------------------------------
+class ExtractedDish(BaseModel):
+    name: str
+    note: Optional[str] = None
+    must_order: int = 0
+
+
+class ExtractedPlace(BaseModel):
+    name: Optional[str] = None
+    place_type: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    our_notes: Optional[str] = None
+    source_name: Optional[str] = None
+    dishes: list[ExtractedDish] = Field(default_factory=list)
+    cuisine: list[str] = Field(default_factory=list)  # resolved against the shared vocab later
+
+
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
 
 
@@ -73,6 +91,22 @@ def parse_extracted_json(raw: str) -> ExtractedRecipe:
         return ExtractedRecipe.model_validate(data)
     except ValidationError as e:  # pragma: no cover - defensive
         raise ValueError(f"Extracted JSON did not match the draft schema: {e}") from e
+
+
+def parse_place_json(raw: str) -> ExtractedPlace:
+    """Parse Claude's place-extraction response into an ExtractedPlace (tolerant of fences)."""
+    text = _FENCE_RE.sub("", raw.strip())
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            raise ValueError("No JSON object found in model output")
+        data = json.loads(text[start : end + 1])
+    try:
+        return ExtractedPlace.model_validate(data)
+    except ValidationError as e:  # pragma: no cover - defensive
+        raise ValueError(f"Extracted JSON did not match the place schema: {e}") from e
 
 
 # --------------------------------------------------------------------------- #

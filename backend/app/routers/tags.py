@@ -1,7 +1,7 @@
 """Tag taxonomy endpoints (controlled vocabulary, spec §8)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db import get_connection, transaction
@@ -9,14 +9,24 @@ from ..schemas import TagCategoryOut, TagOut
 
 router = APIRouter(prefix="/api/tags", tags=["tags"])
 
+_COLLECTION_FILTER = {
+    "recipe": "WHERE collection IN ('recipe', 'both')",
+    "place": "WHERE collection IN ('place', 'both')",
+    "all": "",
+}
+
 
 @router.get("", response_model=list[TagCategoryOut])
-def list_tags():
-    """All tags grouped by dimension, for filters and the recipe editor."""
+def list_tags(collection: str = Query(default="recipe", pattern="^(recipe|place|all)$")):
+    """Tags grouped by dimension, scoped to a collection (recipe | place | all).
+
+    'recipe' (default) keeps the existing recipe UI unchanged; 'place' powers the Eat Out
+    filters; 'all' is for the Settings tag manager. Cuisine ('both') appears in recipe+place.
+    """
     conn = get_connection()
     try:
         categories = conn.execute(
-            "SELECT id, name FROM tag_category ORDER BY id"
+            f"SELECT id, name FROM tag_category {_COLLECTION_FILTER[collection]} ORDER BY id"
         ).fetchall()
         out: list[TagCategoryOut] = []
         for c in categories:
