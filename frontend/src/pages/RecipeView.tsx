@@ -22,6 +22,17 @@ export default function RecipeView() {
     api.getFeatured().then(setFeatured).catch(() => setFeatured(null));
   }, [id]);
 
+  // The browser's "Save as PDF" uses document.title as the default filename,
+  // so name the tab after the recipe while it's open, then restore on leave.
+  useEffect(() => {
+    if (!recipe) return;
+    const prev = document.title;
+    document.title = recipe.title;
+    return () => {
+      document.title = prev;
+    };
+  }, [recipe]);
+
   const isPinned =
     !!recipe && featured?.pinned === true && featured?.recipe?.id === recipe.id;
 
@@ -62,7 +73,7 @@ export default function RecipeView() {
     <article>
       {/* Hero */}
       <div className="card mb-4 overflow-hidden">
-        <div className="aspect-[16/10] w-full bg-[#e9ddcb]">
+        <div className="no-print aspect-[16/10] w-full bg-[#e9ddcb]">
           {recipe.hero_image ? (
             <img
               src={mediaUrl(recipe.hero_image)}
@@ -103,7 +114,7 @@ export default function RecipeView() {
       </div>
 
       {/* Scale toggle — sticky so it's reachable while scrolling ingredients */}
-      <div className="sticky top-[60px] z-[5] mb-4">
+      <div className="no-print sticky top-[60px] z-[5] mb-4">
         <div className="card flex items-center justify-between p-2">
           <span className="pl-2 text-sm font-medium text-muted">Scale</span>
           <div className="flex gap-1 rounded-xl bg-cream p-1">
@@ -237,16 +248,21 @@ export default function RecipeView() {
       )}
 
       {/* Actions */}
-      <button onClick={toggleFeature} className="btn-ghost mb-2 w-full">
-        {isPinned ? '★ Unpin from Recipe of the Week' : '☆ Feature as Recipe of the Week'}
-      </button>
-      <div className="flex gap-2">
-        <Link to={`/recipe/${recipe.id}/edit`} className="btn-ghost flex-1">
-          Edit
-        </Link>
-        <button onClick={onDelete} className="btn-ghost flex-1 !text-ember">
-          Delete
+      <div className="no-print">
+        <button onClick={toggleFeature} className="btn-ghost mb-2 w-full">
+          {isPinned ? '★ Unpin from Recipe of the Week' : '☆ Feature as Recipe of the Week'}
         </button>
+        <button onClick={() => window.print()} className="btn-ghost mb-2 w-full">
+          ⤓ Save as PDF
+        </button>
+        <div className="flex gap-2">
+          <Link to={`/recipe/${recipe.id}/edit`} className="btn-ghost flex-1">
+            Edit
+          </Link>
+          <button onClick={onDelete} className="btn-ghost flex-1 !text-ember">
+            Delete
+          </button>
+        </div>
       </div>
     </article>
   );

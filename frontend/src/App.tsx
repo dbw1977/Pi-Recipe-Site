@@ -18,7 +18,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-10 border-b border-black/5 bg-cream/85 backdrop-blur">
+      <header className="no-print sticky top-0 z-10 border-b border-black/5 bg-cream/85 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             {!onHome && (
