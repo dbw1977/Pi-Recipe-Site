@@ -85,6 +85,7 @@ export interface ImportStatus {
   url: boolean;
   claude: boolean;
   screenshot: boolean;
+  video: boolean;
   voice: boolean;
   voice_transcription: boolean;
   drive_configured: boolean;
@@ -193,6 +194,15 @@ export const api = {
   },
   listTags(): Promise<TagCategory[]> {
     return req<TagCategory[]>('/api/tags');
+  },
+  createTag(categoryId: number, name: string): Promise<Tag> {
+    return req<Tag>('/api/tags', {
+      method: 'POST',
+      body: JSON.stringify({ category_id: categoryId, name }),
+    });
+  },
+  deleteTag(id: number): Promise<void> {
+    return req<void>(`/api/tags/${id}`, { method: 'DELETE' });
   },
 
   // --- Imports (Chunk B) ---

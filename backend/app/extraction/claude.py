@@ -126,6 +126,36 @@ def extract_from_image(
     return _extract(content, allowed_by_category)
 
 
+def extract_from_images(
+    images: list[bytes],
+    media_type: str,
+    allowed_by_category: dict[str, list[str]],
+    *,
+    instruction: str | None = None,
+) -> ExtractedRecipe:
+    """Extract one recipe from several images at once — e.g. frames sampled from a video."""
+    content: list[dict] = []
+    for img in images:
+        b64 = base64.standard_b64encode(img).decode("ascii")
+        content.append(
+            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}}
+        )
+    content.append(
+        {
+            "type": "text",
+            "text": instruction
+            or (
+                "These images are frames sampled in order from a short recipe video. Read any "
+                "on-screen text, captions, and ingredient overlays, and look at the dish, to "
+                "extract the recipe as JSON per the schema. If the video doesn't spell out the "
+                "steps, write concise steps from what the frames show. Combine information "
+                "across all the frames into one recipe."
+            ),
+        }
+    )
+    return _extract(content, allowed_by_category)
+
+
 def structure_text(
     text: str, allowed_by_category: dict[str, list[str]], *, kind: str = "page text"
 ) -> ExtractedRecipe:

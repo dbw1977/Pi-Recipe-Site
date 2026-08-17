@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from .. import crud
 from ..db import get_connection, transaction
-from ..extraction import claude, drive, url_import, voice
+from ..extraction import claude, drive, url_import, video, voice
 from ..extraction.errors import ExtractionError, FeatureUnavailable
 from ..extraction.screenshot import import_screenshot
 from ..extraction.duplicates import find_duplicate
@@ -59,6 +59,7 @@ def status() -> dict:
         "url": True,  # offline scraper always works; AI fallback if Claude is on
         "claude": claude.available(),
         "screenshot": claude.available(),
+        "video": claude.available() and video.frames_available(),
         "voice_transcription": voice.transcription_available(),
         "voice": voice.transcription_available() and claude.available(),
         "drive_configured": drive.available(),
@@ -88,14 +89,17 @@ def import_url_endpoint(payload: UrlIn):
 
 
 # --------------------------------------------------------------------------- #
-# Screenshot (multipart: screenshot + optional extra photos/video)
+# Screenshot OR video (multipart: primary file + optional cover photo)
+#   - primary is an image  -> Claude vision reads the screenshot
+#   - primary is a video   -> ffmpeg samples frames, Claude vision reads them
+# An optional extra image is used as the recipe's cover (hero) photo.
 # --------------------------------------------------------------------------- #
 @router.post("/screenshot")
 async def import_screenshot_endpoint(
     file: UploadFile = File(...),
     extra: list[UploadFile] | None = File(default=None),
 ):
-    image_bytes = await file.read()
+    primary_bytes = await file.read()
     extra_media = []
     for uf in extra or []:
         data = await uf.read()
@@ -103,13 +107,17 @@ async def import_screenshot_endpoint(
         kind = "video" if ctype.startswith("video/") else "image"
         extra_media.append((data, ctype, kind))
 
+    is_video = (file.content_type or "").startswith("video/")
     conn = get_connection()
     try:
-        result = import_screenshot(conn, image_bytes, file.content_type, extra_media=extra_media)
+        if is_video:
+            result = video.import_video(conn, primary_bytes, file.content_type, extra_media=extra_media)
+        else:
+            result = import_screenshot(conn, primary_bytes, file.content_type, extra_media=extra_media)
     except FeatureUnavailable as e:
         raise HTTPException(status_code=503, detail=e.message)
     except ExtractionError as e:
-        return _persist_stub(e, source_type="instagram")
+        return _persist_stub(e, source_type="video" if is_video else "instagram")
     finally:
         conn.close()
     return _persist(result)

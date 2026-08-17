@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, BackupEntry, BackupStatus } from '../api';
+import { api, BackupEntry, BackupStatus, TagCategory } from '../api';
 
 function daysSince(iso: string | undefined): number | null {
   if (!iso) return null;
@@ -109,6 +109,92 @@ export default function Settings() {
           restored is only a hope.
         </p>
       </section>
+
+      <TagManager />
     </div>
+  );
+}
+
+function TagManager() {
+  const [cats, setCats] = useState<TagCategory[]>([]);
+  const [adding, setAdding] = useState<Record<number, string>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => api.listTags().then(setCats).catch(() => setCats([]));
+  useEffect(() => {
+    load();
+  }, []);
+
+  const add = async (catId: number) => {
+    const name = (adding[catId] || '').trim();
+    if (!name) return;
+    setError(null);
+    try {
+      await api.createTag(catId, name);
+      setAdding((a) => ({ ...a, [catId]: '' }));
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const del = async (id: number, name: string) => {
+    if (!confirm(`Delete the tag “${name}”? It’s removed from any recipes using it.`)) return;
+    setError(null);
+    try {
+      await api.deleteTag(id);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  return (
+    <section className="card p-4">
+      <h2 className="text-lg font-semibold">Tags</h2>
+      <p className="mb-2 mt-1 text-sm text-muted">
+        The controlled list the app tags recipes from — used by auto-tagging on import and by the
+        recipe editor. Add ones you use; delete ones you don’t. Changes apply right away.
+      </p>
+      {error && (
+        <div className="mb-2 rounded-lg bg-ember/10 px-3 py-2 text-sm text-emberDark">{error}</div>
+      )}
+      <div className="space-y-3">
+        {cats.map((cat) => (
+          <div key={cat.id} className="border-t border-black/5 pt-3 first:border-t-0">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+              {cat.name}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {cat.tags.map((t) => (
+                <span key={t.id} className="chip bg-white">
+                  {t.name}
+                  <button
+                    onClick={() => del(t.id, t.name)}
+                    className="ml-1.5 text-muted hover:text-ember"
+                    aria-label={`Delete ${t.name}`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+              {cat.tags.length === 0 && <span className="text-sm text-muted">None yet.</span>}
+            </div>
+            <div className="mt-2 flex gap-2">
+              <input
+                className="w-full rounded-lg border-0 bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-ember/40"
+                value={adding[cat.id] || ''}
+                onChange={(e) => setAdding((a) => ({ ...a, [cat.id]: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && add(cat.id)}
+                placeholder={`Add a ${cat.name} tag…`}
+              />
+              <button onClick={() => add(cat.id)} className="btn-ghost !py-2 text-sm">
+                Add
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

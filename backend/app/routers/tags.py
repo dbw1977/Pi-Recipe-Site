@@ -62,3 +62,14 @@ def create_tag(payload: NewTag):
             (payload.category_id, name),
         ).fetchone()
         return TagOut(id=row["id"], name=name, category=cat["name"])
+
+
+@router.delete("/{tag_id}", status_code=204)
+def delete_tag(tag_id: int):
+    """Remove a tag from the vocabulary, unlinking it from any recipes that used it."""
+    with transaction() as conn:
+        row = conn.execute("SELECT id FROM tag WHERE id = ?", (tag_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Tag not found")
+        conn.execute("DELETE FROM recipe_tag WHERE tag_id = ?", (tag_id,))
+        conn.execute("DELETE FROM tag WHERE id = ?", (tag_id,))

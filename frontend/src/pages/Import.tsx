@@ -104,7 +104,7 @@ function UrlCard({ onImported }: { onImported: (r: ImportResponse) => void }) {
   );
 }
 
-// --- Screenshot -------------------------------------------------------------
+// --- Screenshot / video -----------------------------------------------------
 function ScreenshotCard({
   status, onImported,
 }: {
@@ -112,36 +112,86 @@ function ScreenshotCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [cover, setCover] = useState<File | null>(null);
+  const sourceRef = useRef<HTMLInputElement>(null);
+  const coverRef = useRef<HTMLInputElement>(null);
+
+  // Video needs ffmpeg on the Pi; only hide it when the server explicitly reports false.
+  const videoReady = !status || status.video !== false;
 
   const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
     setBusy(true);
     setErr(null);
     try {
-      onImported(await api.importScreenshot(files[0], files.slice(1)));
+      onImported(await api.importScreenshot(file, cover ? [cover] : []));
     } catch (er) {
       setErr((er as Error).message);
     } finally {
       setBusy(false);
-      if (inputRef.current) inputRef.current.value = '';
+      if (sourceRef.current) sourceRef.current.value = '';
     }
+  };
+
+  const clearCover = () => {
+    setCover(null);
+    if (coverRef.current) coverRef.current.value = '';
   };
 
   return (
     <Card
-      title="From a screenshot"
-      subtitle="Instagram or any recipe photo. Claude reads the image."
+      title="From a screenshot or video"
+      subtitle="A recipe screenshot (Instagram, a photo) or a recipe video you've downloaded. Claude reads it and structures the recipe."
       disabled={!!status && !status.screenshot}
       disabledHint="Needs an Anthropic API key (ANTHROPIC_API_KEY) in your .env."
     >
-      <input ref={inputRef} type="file" accept="image/*" multiple onChange={pick} className="hidden" />
-      <button onClick={() => inputRef.current?.click()} disabled={busy} className="btn-primary w-full">
-        {busy ? 'Reading…' : '📷 Choose screenshot'}
+      {/* Optional cover photo — becomes the recipe's picture. Documented so anyone knows. */}
+      <div className="mb-3 rounded-lg bg-cream/70 p-3">
+        <div className="text-sm font-medium">
+          Cover photo <span className="font-normal text-muted">(optional)</span>
+        </div>
+        <p className="mt-0.5 text-xs text-muted">
+          Want a nice picture on the recipe? Add a photo of the finished dish and it becomes the
+          recipe's cover image. Skip it and we'll use the screenshot — or, for a video, a frame
+          from the clip.
+        </p>
+        <input
+          ref={coverRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => setCover(e.target.files?.[0] || null)}
+        />
+        <div className="mt-2 flex items-center gap-2">
+          <button onClick={() => coverRef.current?.click()} className="btn-ghost !py-2 text-sm">
+            {cover ? `✓ ${cover.name}` : '🖼 Choose cover photo'}
+          </button>
+          {cover && (
+            <button onClick={clearCover} className="text-xs text-ember">
+              remove
+            </button>
+          )}
+        </div>
+      </div>
+
+      <input
+        ref={sourceRef}
+        type="file"
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={pick}
+      />
+      <button onClick={() => sourceRef.current?.click()} disabled={busy} className="btn-primary w-full">
+        {busy ? 'Reading…' : '📷 Choose screenshot or video'}
       </button>
+      {!videoReady && (
+        <p className="mt-2 text-xs text-muted">
+          Videos need <code>ffmpeg</code> installed on the Pi; screenshots work now.
+        </p>
+      )}
       <p className="mt-2 text-xs text-muted">
-        You can select extra photos too; the first image is the main one.
+        A video takes a little longer — the Pi samples frames from it, then Claude reads them.
       </p>
       <ErrorLine msg={err} />
     </Card>

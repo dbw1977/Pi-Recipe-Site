@@ -46,17 +46,19 @@ def import_screenshot(
         image_bytes, _vision_media_type(content_type), tag_index.allowed_by_category
     )
 
-    # Store the screenshot as media; it becomes the hero unless a photo is supplied.
+    # Store the screenshot as media; it becomes the hero unless a cover photo is supplied.
     screenshot_rel = media.save_bytes(image_bytes, content_type=content_type, filename="screenshot")
     media_rows = [{"kind": "image", "path": screenshot_rel, "caption": "source screenshot"}]
     hero = screenshot_rel
+    cover_set = False
 
     for data, ctype, kind in extra_media or []:
         rel = media.save_bytes(data, content_type=ctype)
         media_rows.append({"kind": kind, "path": rel, "caption": None})
-        # Prefer a supplied photo as the hero over the screenshot.
-        if kind == "image":
+        # The first supplied photo becomes the cover (hero), preferred over the screenshot.
+        if kind == "image" and not cover_set:
             hero = rel
+            cover_set = True
 
     recipe = to_recipe_input(
         extracted, source_type="instagram", tag_index=tag_index, hero_image=hero

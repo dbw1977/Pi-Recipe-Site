@@ -149,10 +149,16 @@ Enable them by adding keys to `.env` (see `.env.example`). Easiest first:
 
 | Path | Needs | Notes |
 |---|---|---|
-| **URL** | *nothing* for supported sites | Uses `recipe-scrapers` offline. Unsupported sites use the Claude fallback (needs the Anthropic key). |
+| **URL** | *nothing* for supported sites | Uses `recipe-scrapers` offline. Unsupported sites (and Reddit posts) use the Claude fallback (needs the Anthropic key). |
 | **Screenshot** | `ANTHROPIC_API_KEY` | Claude vision reads the image (Instagram etc.). |
+| **Video** | `ANTHROPIC_API_KEY` + `ffmpeg` | Same importer as screenshots: ffmpeg samples frames from a downloaded clip, Claude reads them. `sudo apt install ffmpeg`. |
 | **Voice** | `WHISPER_BIN` + `WHISPER_MODEL` + `ANTHROPIC_API_KEY` | whisper.cpp transcribes locally, Claude structures. |
 | **Google Drive** | `GOOGLE_CLIENT_SECRETS` + `DRIVE_FOLDER_ID` | One-time OAuth, then a manual "Scan" button. |
+
+The screenshot/video importer also takes an optional **cover photo** — add a picture of the
+finished dish and it becomes the recipe's hero image (otherwise the screenshot, or a frame
+from the video, is used). **Tags** are auto-selected on every import and confirmed in the
+review screen; manage the tag vocabulary (add/delete) under **Settings → Tags**.
 
 **Set up the Anthropic key** (unlocks screenshot + fallbacks):
 1. Create a key at console.anthropic.com and add a little credit (imports cost fractions of a cent).

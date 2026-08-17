@@ -66,6 +66,11 @@ ANTHROPIC_FALLBACK_MODEL = os.environ.get("ANTHROPIC_FALLBACK_MODEL", "claude-so
 WHISPER_BIN = os.environ.get("WHISPER_BIN", "").strip()
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "").strip()
 
+# Video import: Claude can't watch a video, so we sample frames with ffmpeg and read those
+# with vision. ffmpeg is optional — without it, video import disables gracefully (rule 8).
+FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "ffmpeg").strip()
+VIDEO_FRAME_COUNT = int(os.environ.get("VIDEO_FRAME_COUNT", "9"))
+
 # Google Drive import (spec §5c) — OAuth client secret + stored token + target folder.
 GOOGLE_CLIENT_SECRETS = os.environ.get("GOOGLE_CLIENT_SECRETS", "").strip()
 GOOGLE_TOKEN_PATH = os.environ.get(
