@@ -193,3 +193,96 @@ class PlaceCard(BaseModel):
     visited: int
     status: str
     tags: list[TagOut]
+
+
+# --------------------------------------------------------------------------- #
+# Meal planner + grocery list (Chunk E)
+# --------------------------------------------------------------------------- #
+class EntryIn(BaseModel):
+    day_index: int = 0
+    meal_slot: Optional[str] = None
+    recipe_id: Optional[int] = None
+    place_id: Optional[int] = None
+    scale: float = 1.0
+    sort_order: int = 0
+
+
+class EntryPatch(BaseModel):
+    day_index: Optional[int] = None
+    meal_slot: Optional[str] = None
+    scale: Optional[float] = None
+    sort_order: Optional[int] = None
+
+
+class EntryOut(BaseModel):
+    id: int
+    day_index: int
+    meal_slot: Optional[str]
+    scale: float
+    sort_order: Optional[int]
+    kind: str                       # 'recipe' | 'place'
+    recipe_id: Optional[int]
+    place_id: Optional[int]
+    title: str                      # resolved recipe title or place name
+    hero_image: Optional[str]
+
+
+class MealPlanIn(BaseModel):
+    start_date: str                 # ISO date (YYYY-MM-DD)
+    title: Optional[str] = None
+
+
+class MealPlanCard(BaseModel):
+    id: int
+    start_date: str
+    title: Optional[str]
+    entry_count: int
+
+
+class MealPlanOut(BaseModel):
+    id: int
+    start_date: str
+    title: Optional[str]
+    created_at: Optional[str]
+    updated_at: Optional[str]
+    entries: list[EntryOut]
+
+
+class GroceryLineIn(BaseModel):
+    """A computed line from the client-side aggregator (deterministic core)."""
+    name: str
+    unit: Optional[str] = None
+    display: Optional[str] = None
+    base: Optional[float] = None
+    family: str = "none"
+    aisle: str = "Other"
+    recipes: list[str] = Field(default_factory=list)
+
+
+class GroceryGenerateIn(BaseModel):
+    items: list[GroceryLineIn] = Field(default_factory=list)
+
+
+class ManualItemIn(BaseModel):
+    name: str
+    unit: Optional[str] = None
+    display: Optional[str] = None
+    aisle: str = "Other"
+
+
+class ItemPatch(BaseModel):
+    checked: Optional[bool] = None
+
+
+class GroceryItemOut(BaseModel):
+    id: int
+    name: str
+    unit: Optional[str]
+    display: Optional[str]
+    base: Optional[float]
+    family: str
+    aisle: str
+    checked: int
+    manual: int
+    recipes: list[str]
+    sort_order: Optional[int]

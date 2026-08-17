@@ -295,7 +295,35 @@ HOME_CITY=Gainesville
 ```
 The Chunk D migration is additive and non-destructive — existing recipes are untouched.
 
+## Chunk E — Meal planner & grocery list
+
+Plan a week of cooking and turn it into one consolidated shopping list. Reuses the **Chunk A
+scaling engine** to sum ingredients and the **Chunk D print/export** for the list — the core
+is fully deterministic and works with **no API key**.
+
+- **Planner board** (📅 in the header): start-date picker **defaulting to the upcoming
+  Saturday**, a 7-day board, and a per-day picker that **reuses recipe search** (or attach a
+  **Place** for an eat-out day, which contributes nothing to groceries). Each recipe entry has
+  a **scale** factor. There's also an **"Add to meal plan"** button on every recipe.
+- **Grocery generation (deterministic):** collects every assigned recipe's ingredients × its
+  scale, **normalizes names** ("garlic cloves" + "minced garlic" → `garlic`), **merges & sums**
+  compatible units in base units then snaps to kitchen-friendly amounts (so garlic across
+  recipes → **"6 cloves"**, and ¼ cup + 2 tbsp oil → **"¼ cup + 2 tbsp"**). Incompatible units
+  for one name stay as separate lines; "to taste"/assembly items are listed once without a
+  quantity; everything is **grouped by aisle**.
+- **Grocery view:** check items off, **add manual items**, see a "for <recipes>" hint, and
+  **copy-as-text** or **Save-as-PDF**. **Regenerating preserves** your checkmarks and manual
+  items (matched on name+unit) and only refreshes recipe-derived quantities.
+- **Optional AI:** with `ANTHROPIC_API_KEY` set, items the built-in lookup left in *Other* get
+  tidied into aisles. Without a key this is silently skipped — generation always works.
+
+The aggregation logic lives in `frontend/src/lib/grocery.ts` with Vitest tests
+(`grocery.test.ts`, incl. the summed-garlic case); the plan/list state is persisted by the
+backend (`/api/meal-plans`). The Chunk E migration adds tables only — nothing existing changes.
+
 ## Not in these chunks (by design)
 
 - Google Places API autocomplete (v1 uses a pasted Maps link) and public link sharing
   (needs exposing the site — deliberately deferred, spec §12).
+- Pantry inventory + receipt-photo restocking (candidate **Chunk F**), and auto-suggesting
+  *which* recipes to cook — the planner is manual selection.

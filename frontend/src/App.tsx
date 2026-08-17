@@ -51,6 +51,9 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-1.5">
+              <Link to="/plan" className="btn-ghost !px-2.5 !py-2" aria-label="Meal planner" title="Meal planner">
+                📅
+              </Link>
               <Link to="/settings" className="btn-ghost !px-2.5 !py-2" aria-label="Settings" title="Settings">
                 ⚙
               </Link>

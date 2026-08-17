@@ -198,6 +198,60 @@ export interface PlaceInput {
   tag_ids: number[];
 }
 
+// --- Meal planner + grocery (Chunk E) --------------------------------------
+export interface MealPlanCard {
+  id: number;
+  start_date: string;
+  title: string | null;
+  entry_count: number;
+}
+
+export interface PlanEntry {
+  id: number;
+  day_index: number;
+  meal_slot: string | null;
+  scale: number;
+  sort_order: number | null;
+  kind: 'recipe' | 'place';
+  recipe_id: number | null;
+  place_id: number | null;
+  title: string;
+  hero_image: string | null;
+}
+
+export interface MealPlan {
+  id: number;
+  start_date: string;
+  title: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  entries: PlanEntry[];
+}
+
+export interface GroceryItem {
+  id: number;
+  name: string;
+  unit: string | null;
+  display: string | null;
+  base: number | null;
+  family: string;
+  aisle: string;
+  checked: number;
+  manual: number;
+  recipes: string[];
+  sort_order: number | null;
+}
+
+export interface GroceryLineInput {
+  name: string;
+  unit: string | null;
+  display: string | null;
+  base: number | null;
+  family: string;
+  aisle: string;
+  recipes: string[];
+}
+
 export interface RecipeInput {
   title: string;
   description?: string | null;
@@ -343,6 +397,47 @@ export const api = {
     files.forEach((f) => form.append('file', f));
     if (cover) form.append('extra', cover);
     return postForm<PlaceImportResponse>('/api/imports/place/screenshot', form);
+  },
+
+  // --- Meal planner + grocery (Chunk E) ---
+  listMealPlans(): Promise<MealPlanCard[]> {
+    return req<MealPlanCard[]>('/api/meal-plans');
+  },
+  createMealPlan(startDate: string, title?: string): Promise<MealPlan> {
+    return req<MealPlan>('/api/meal-plans', { method: 'POST', body: JSON.stringify({ start_date: startDate, title: title ?? null }) });
+  },
+  getMealPlan(id: number): Promise<MealPlan> {
+    return req<MealPlan>(`/api/meal-plans/${id}`);
+  },
+  deleteMealPlan(id: number): Promise<void> {
+    return req<void>(`/api/meal-plans/${id}`, { method: 'DELETE' });
+  },
+  addPlanEntry(planId: number, e: { day_index: number; recipe_id?: number; place_id?: number; scale?: number; meal_slot?: string }): Promise<PlanEntry> {
+    return req<PlanEntry>(`/api/meal-plans/${planId}/entries`, { method: 'POST', body: JSON.stringify(e) });
+  },
+  updatePlanEntry(planId: number, entryId: number, patch: { scale?: number; day_index?: number; meal_slot?: string }): Promise<void> {
+    return req<void>(`/api/meal-plans/${planId}/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify(patch) });
+  },
+  deletePlanEntry(planId: number, entryId: number): Promise<void> {
+    return req<void>(`/api/meal-plans/${planId}/entries/${entryId}`, { method: 'DELETE' });
+  },
+  getGrocery(planId: number): Promise<GroceryItem[]> {
+    return req<GroceryItem[]>(`/api/meal-plans/${planId}/grocery`);
+  },
+  generateGrocery(planId: number, items: GroceryLineInput[]): Promise<GroceryItem[]> {
+    return req<GroceryItem[]>(`/api/meal-plans/${planId}/grocery/generate`, { method: 'POST', body: JSON.stringify({ items }) });
+  },
+  addGroceryItem(planId: number, name: string, aisle = 'Other'): Promise<GroceryItem> {
+    return req<GroceryItem>(`/api/meal-plans/${planId}/grocery/items`, { method: 'POST', body: JSON.stringify({ name, aisle }) });
+  },
+  setGroceryChecked(planId: number, itemId: number, checked: boolean): Promise<void> {
+    return req<void>(`/api/meal-plans/${planId}/grocery/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ checked }) });
+  },
+  deleteGroceryItem(planId: number, itemId: number): Promise<void> {
+    return req<void>(`/api/meal-plans/${planId}/grocery/items/${itemId}`, { method: 'DELETE' });
+  },
+  categorizeAisles(names: string[]): Promise<{ available: boolean; aisles: Record<string, string> }> {
+    return req(`/api/meal-plans/grocery/categorize`, { method: 'POST', body: JSON.stringify({ names }) });
   },
 
   // --- Drafts queue (Chunk B) ---

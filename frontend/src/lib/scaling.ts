@@ -207,7 +207,7 @@ export function renderVolume(totalTsp: number): string {
 // --------------------------------------------------------------------------- //
 // Weight & count rendering
 // --------------------------------------------------------------------------- //
-function renderWeight(grams: number, originalUnit: string): string {
+export function renderWeight(grams: number, originalUnit: string): string {
   const metric = ['g', 'gram', 'grams', 'gm', 'kg', 'kilogram', 'kilograms'].includes(originalUnit);
   if (metric) {
     if (grams >= 1000 - EPS) return `${trimDecimal(grams / 1000)} kg`;
@@ -225,6 +225,34 @@ function renderCount(quantity: number, unit: string | null, factor: number): Sca
   const significant = Math.abs(raw - rounded) > EPS;
   if (!unit) return { display: String(rounded), rounded: significant };
   return { display: `${rounded} ${unitLabel(unit, rounded)}`, rounded: significant };
+}
+
+// --------------------------------------------------------------------------- //
+// Unit-family helpers (reused by the grocery aggregator, Chunk E)
+// --------------------------------------------------------------------------- //
+export type UnitFamily = 'volume' | 'weight' | 'count';
+
+/** Which measurement family a unit belongs to (unknown/empty units are counts). */
+export function unitFamily(unit: string | null): UnitFamily {
+  const u = (unit || '').toLowerCase().trim();
+  if (u in VOLUME_TO_TSP) return 'volume';
+  if (u in WEIGHT_TO_G) return 'weight';
+  return 'count';
+}
+
+/** Convert a quantity+unit into its family's base unit (tsp / grams / count). */
+export function toBaseUnit(quantity: number, unit: string | null): number {
+  const u = (unit || '').toLowerCase().trim();
+  if (u in VOLUME_TO_TSP) return quantity * VOLUME_TO_TSP[u];
+  if (u in WEIGHT_TO_G) return quantity * WEIGHT_TO_G[u];
+  return quantity;
+}
+
+/** True when a weight unit is metric (g/kg) rather than imperial (oz/lb). */
+export function isMetricWeight(unit: string | null): boolean {
+  return ['g', 'gram', 'grams', 'gm', 'kg', 'kilogram', 'kilograms'].includes(
+    (unit || '').toLowerCase().trim(),
+  );
 }
 
 // --------------------------------------------------------------------------- //

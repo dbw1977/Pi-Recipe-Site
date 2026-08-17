@@ -219,3 +219,31 @@ def extract_place_from_images(
         "Claude did not return valid place JSON. Opening the review screen so you can finish it.",
         partial={"raw": last_raw[:2000]},
     )
+
+
+# --------------------------------------------------------------------------- #
+# Grocery aisle categorization (Chunk E) — OPTIONAL. The deterministic list works
+# without this; it just tidies items the built-in lookup left in "Other".
+# --------------------------------------------------------------------------- #
+_AISLE_SYSTEM = (
+    "You sort grocery items into supermarket aisles. Reply with ONLY a JSON object mapping "
+    "each item name to one aisle from this exact list: Produce, Meat & Seafood, Dairy & Eggs, "
+    "Bakery, Pantry, Condiments, Spices, Frozen, Beverages, Other. No prose, no fences."
+)
+
+
+def categorize_aisles(names: list[str]) -> dict[str, str]:
+    """Best-effort {name: aisle}. Returns {} on any trouble — never raises to the caller."""
+    if not names or not available():
+        return {}
+    import json
+
+    content = [{"type": "text", "text": "Items:\n" + "\n".join(f"- {n}" for n in names)}]
+    try:
+        raw = _call(content, model=config.ANTHROPIC_MODEL, system=_AISLE_SYSTEM)
+        raw = raw.strip().strip("`")
+        start, end = raw.find("{"), raw.rfind("}")
+        data = json.loads(raw[start : end + 1]) if start != -1 else {}
+        return {str(k): str(v) for k, v in data.items() if isinstance(v, str)}
+    except Exception:
+        return {}

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, FeaturedResponse, Recipe } from '../api';
+import { api, FeaturedResponse, MealPlanCard, Recipe } from '../api';
 import { scaleQuantity } from '../lib/scaling';
+import { dayLabel, rangeLabel, upcomingSaturday } from '../lib/dates';
 import { mediaUrl } from './Library';
 
 const FACTORS = [1, 2, 3];
@@ -249,6 +250,7 @@ export default function RecipeView() {
 
       {/* Actions */}
       <div className="no-print">
+        <AddToPlan recipeId={recipe.id} />
         <button onClick={toggleFeature} className="btn-ghost mb-2 w-full">
           {isPinned ? '★ Unpin from Recipe of the Week' : '☆ Feature as Recipe of the Week'}
         </button>
@@ -265,6 +267,77 @@ export default function RecipeView() {
         </div>
       </div>
     </article>
+  );
+}
+
+function AddToPlan({ recipeId }: { recipeId: number }) {
+  const [open, setOpen] = useState(false);
+  const [plans, setPlans] = useState<MealPlanCard[]>([]);
+  const [planId, setPlanId] = useState<string>('new');
+  const [day, setDay] = useState(0);
+  const [done, setDone] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (open) api.listMealPlans().then((p) => { setPlans(p); if (p.length) setPlanId(String(p[0].id)); }).catch(() => setPlans([]));
+  }, [open]);
+
+  const start = planId === 'new' ? upcomingSaturday() : plans.find((p) => String(p.id) === planId)!.start_date;
+
+  const add = async () => {
+    setBusy(true);
+    try {
+      let pid: number;
+      if (planId === 'new') pid = (await api.createMealPlan(upcomingSaturday())).id;
+      else pid = Number(planId);
+      await api.addPlanEntry(pid, { day_index: day, recipe_id: recipeId });
+      const d = dayLabel(start, day);
+      setDone(`Added to ${d.dow} ${d.date}.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="btn-ghost mb-2 w-full">
+        📅 Add to meal plan
+      </button>
+    );
+  }
+
+  return (
+    <div className="mb-2 rounded-xl bg-white p-3 ring-1 ring-black/10">
+      {done ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm text-herb">{done}</span>
+          <Link to="/plan" className="text-sm font-medium text-ember underline">Open planner →</Link>
+        </div>
+      ) : (
+        <>
+          <div className="mb-2 grid grid-cols-2 gap-2">
+            <select value={planId} onChange={(e) => setPlanId(e.target.value)} className="rounded-lg bg-cream px-2 py-2 text-sm ring-1 ring-black/10">
+              <option value="new">New week (this Sat)</option>
+              {plans.map((p) => (
+                <option key={p.id} value={p.id}>{p.title || rangeLabel(p.start_date)}</option>
+              ))}
+            </select>
+            <select value={day} onChange={(e) => setDay(Number(e.target.value))} className="rounded-lg bg-cream px-2 py-2 text-sm ring-1 ring-black/10">
+              {Array.from({ length: 7 }, (_, i) => {
+                const d = dayLabel(start, i);
+                return <option key={i} value={i}>{d.dow} {d.date}</option>;
+              })}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={add} disabled={busy} className="btn-primary flex-1 !py-2 text-sm">
+              {busy ? 'Adding…' : 'Add'}
+            </button>
+            <button onClick={() => setOpen(false)} className="btn-ghost !py-2 text-sm">Cancel</button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

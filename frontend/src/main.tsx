@@ -15,6 +15,9 @@ import PlaceEdit from './pages/PlaceEdit';
 import PlaceImport from './pages/PlaceImport';
 import PlaceDrafts from './pages/PlaceDrafts';
 import PlacesExport from './pages/PlacesExport';
+import Planner from './pages/Planner';
+import PlanBoard from './pages/PlanBoard';
+import GroceryList from './pages/GroceryList';
 
 const router = createBrowserRouter([
   {
@@ -37,6 +40,10 @@ const router = createBrowserRouter([
       { path: 'eat/export', element: <PlacesExport /> },
       { path: 'eat/place/:id', element: <PlaceView /> },
       { path: 'eat/place/:id/edit', element: <PlaceEdit /> },
+      // Meal planner + grocery (spans both collections)
+      { path: 'plan', element: <Planner /> },
+      { path: 'plan/:id', element: <PlanBoard /> },
+      { path: 'plan/:id/grocery', element: <GroceryList /> },
     ],
   },
 ]);
