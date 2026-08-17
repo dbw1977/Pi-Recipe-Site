@@ -15,8 +15,10 @@ def client(tmp_path: Path, monkeypatch) -> TestClient:
 
     test_db = tmp_path / "test-recipes.db"
     monkeypatch.setattr(config, "DB_PATH", test_db)
-    # Keep imported media out of the repo during tests.
+    # Keep imported media, thumbnails, and backups out of the repo during tests.
     monkeypatch.setattr(config, "MEDIA_ROOT", tmp_path / "media")
+    monkeypatch.setattr(config, "THUMBS_DIR", tmp_path / "thumbs")
+    monkeypatch.setattr(config, "BACKUP_LOCAL_DIR", tmp_path / "backups")
 
     # main imports config at module load; reload so create_app() sees the patched path
     # via db.get_connection() (which reads config.DB_PATH lazily at call time).

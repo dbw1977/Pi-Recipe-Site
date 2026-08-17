@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, RecipeCard, TagCategory } from '../api';
+import { api, FeaturedResponse, RecipeCard, TagCategory } from '../api';
 
 // A small hero color rotation so image-less cards still look intentional, not broken.
 const PLACEHOLDER_TONES = ['#e9ddcb', '#e6d3c4', '#dfe3d3', '#ead9d4', '#e2ddd0'];
@@ -13,6 +13,7 @@ export default function Library() {
   const [categories, setCategories] = useState<TagCategory[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [featured, setFeatured] = useState<FeaturedResponse | null>(null);
 
   // Debounce the search box (spec §9: live, debounced).
   useEffect(() => {
@@ -22,6 +23,7 @@ export default function Library() {
 
   useEffect(() => {
     api.listTags().then(setCategories).catch(() => setCategories([]));
+    api.getFeatured().then(setFeatured).catch(() => setFeatured(null));
   }, []);
 
   useEffect(() => {
@@ -42,8 +44,15 @@ export default function Library() {
     [categories],
   );
 
+  const showHero = !debounced && activeTagCount === 0 && featured?.recipe;
+
   return (
     <div>
+      {/* Recipe of the Week — pinned at the very top when browsing the full library */}
+      {showHero && featured?.recipe && (
+        <FeaturedHero card={featured.recipe} pinned={featured.pinned} />
+      )}
+
       {/* Search */}
       <div className="mb-3 flex gap-2">
         <input
@@ -124,7 +133,7 @@ function CardTile({ card, tone }: { card: RecipeCard; tone: string }) {
       <div className="aspect-[4/3] w-full overflow-hidden" style={{ background: tone }}>
         {card.hero_image ? (
           <img
-            src={mediaUrl(card.hero_image)}
+            src={thumbUrl(card.hero_image)}
             alt={card.title}
             loading="lazy"
             className="h-full w-full object-cover transition group-active:scale-[1.02]"
@@ -172,8 +181,41 @@ function EmptyState({ searching }: { searching: boolean }) {
   );
 }
 
-// Media originals live on the NAS (Chunk C); for now, serve relative paths under /media.
+function FeaturedHero({ card, pinned }: { card: RecipeCard; pinned: boolean }) {
+  return (
+    <Link to={`/recipe/${card.id}`} className="card mb-5 block overflow-hidden">
+      <div className="relative aspect-[16/9] w-full bg-[#e9ddcb] sm:aspect-[21/9]">
+        {card.hero_image ? (
+          <img src={mediaUrl(card.hero_image)} alt={card.title} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-5xl opacity-40">🍽️</div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+        <span className="absolute left-3 top-3 chip bg-white/90 !text-[12px] font-semibold text-ember">
+          ⭐ {pinned ? 'Pinned this week' : 'Recipe of the Week'}
+        </span>
+        <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+          <h2 className="font-display text-2xl font-semibold leading-tight drop-shadow">{card.title}</h2>
+          {(card.source_handle || card.source_name) && (
+            <p className="mt-0.5 text-sm text-white/85">{card.source_handle || card.source_name}</p>
+          )}
+          <span className="mt-2 inline-block rounded-lg bg-white/95 px-3 py-1.5 text-sm font-semibold text-bark">
+            View recipe →
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// Media originals live on the NAS (Chunk C); serve relative paths under /media.
 export function mediaUrl(path: string): string {
   if (/^https?:\/\//.test(path)) return path;
   return `/media/${path.replace(/^\/+/, '')}`;
+}
+
+// Grid images use the on-disk thumbnail cache (generated on first hit).
+export function thumbUrl(path: string): string {
+  if (/^https?:\/\//.test(path)) return path;
+  return `/thumb/${path.replace(/^\/+/, '')}`;
 }

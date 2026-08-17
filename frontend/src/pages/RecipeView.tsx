@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, Recipe } from '../api';
+import { api, FeaturedResponse, Recipe } from '../api';
 import { scaleQuantity } from '../lib/scaling';
 import { mediaUrl } from './Library';
 
@@ -14,11 +14,22 @@ export default function RecipeView() {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [notesOpen, setNotesOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [featured, setFeatured] = useState<FeaturedResponse | null>(null);
 
   useEffect(() => {
     if (!id) return;
     api.getRecipe(Number(id)).then(setRecipe).catch((e) => setError(e.message));
+    api.getFeatured().then(setFeatured).catch(() => setFeatured(null));
   }, [id]);
+
+  const isPinned =
+    !!recipe && featured?.pinned === true && featured?.recipe?.id === recipe.id;
+
+  const toggleFeature = async () => {
+    if (!recipe) return;
+    const next = isPinned ? await api.unpinFeatured() : await api.pinFeatured(recipe.id);
+    setFeatured(next);
+  };
 
   const noteItems = useMemo(
     () =>
@@ -226,6 +237,9 @@ export default function RecipeView() {
       )}
 
       {/* Actions */}
+      <button onClick={toggleFeature} className="btn-ghost mb-2 w-full">
+        {isPinned ? '★ Unpin from Recipe of the Week' : '☆ Feature as Recipe of the Week'}
+      </button>
       <div className="flex gap-2">
         <Link to={`/recipe/${recipe.id}/edit`} className="btn-ghost flex-1">
           Edit

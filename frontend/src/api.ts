@@ -104,6 +104,27 @@ export interface DriveScanSummary {
   total_seen: number;
 }
 
+export interface FeaturedResponse {
+  recipe: RecipeCard | null;
+  iso_week: string;
+  pinned: boolean;
+}
+
+export interface BackupEntry {
+  kind: string;
+  target: string;
+  ok: number;
+  message: string;
+  size_bytes: number | null;
+  created_at: string;
+}
+
+export interface BackupStatus {
+  local: BackupEntry | null;
+  drive: BackupEntry | null;
+  drive_configured: boolean;
+}
+
 export interface RecipeInput {
   title: string;
   description?: string | null;
@@ -212,5 +233,24 @@ export const api = {
   },
   discardDraft(id: number): Promise<void> {
     return req<void>(`/api/drafts/${id}`, { method: 'DELETE' });
+  },
+
+  // --- Recipe of the Week (Chunk C) ---
+  getFeatured(): Promise<FeaturedResponse> {
+    return req<FeaturedResponse>('/api/featured');
+  },
+  pinFeatured(id: number): Promise<FeaturedResponse> {
+    return req<FeaturedResponse>(`/api/featured/${id}/pin`, { method: 'POST' });
+  },
+  unpinFeatured(): Promise<FeaturedResponse> {
+    return req<FeaturedResponse>('/api/featured/pin', { method: 'DELETE' });
+  },
+
+  // --- Backups (Chunk C) ---
+  backupStatus(): Promise<BackupStatus> {
+    return req<BackupStatus>('/api/backups/status');
+  },
+  runBackup(kind: 'local' | 'drive' | 'both'): Promise<BackupStatus> {
+    return req<BackupStatus>('/api/backups/run', { method: 'POST', body: JSON.stringify({ kind }) });
   },
 };

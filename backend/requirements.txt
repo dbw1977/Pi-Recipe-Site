@@ -7,6 +7,9 @@ python-multipart>=0.0.9          # file uploads (screenshot / voice import)
 anthropic>=0.39,<1.0             # Claude API: vision, structuring, tagging
 recipe-scrapers>=15.0            # URL import (structured extraction from recipe sites)
 requests>=2.31                   # fetch pages / download hero images locally
+
+# --- Chunk C: polish + backups ---
+pillow>=10.0                     # thumbnail generation (light on the Pi 4)
 # Google Drive import (optional at runtime — imported lazily; only needed for the Drive path)
 google-api-python-client>=2.100
 google-auth>=2.30

@@ -177,6 +177,91 @@ folder and skips files it already imported.
 steak-salad Instagram image (spec §13); the Drafts queue supports per-row Approve / Edit /
 Discard and **Approve-all**; likely duplicates are flagged in the queue.
 
+## Chunk C — polish + backups
+
+Makes the app pleasant to live with and the data genuinely safe.
+
+- **Recipe of the Week** — a deterministic weekly hero pinned at the top of the library,
+  keyed to the ISO week (stable all week, identical for both users, computed on load — no
+  cron). Recent picks are skipped until the library cycles. Any recipe can be **pinned**
+  ("Feature as Recipe of the Week") to override the automatic pick for the current week.
+- **Thumbnails** — the grid serves small WebP thumbnails generated on first view and cached
+  on **local disk** (`THUMBS_DIR`); originals stay wherever `MEDIA_ROOT` points (e.g. the NAS).
+- **NAS media mount** — set `MEDIA_ROOT` to a mounted NAS path; the DB stores only relative
+  paths, so originals resolve through the mount. The **database always stays on local disk**.
+- **Backups** — consistent `VACUUM INTO` snapshots (never a live-file copy): a nightly local
+  snapshot (keep last `BACKUP_KEEP`) and a weekly Google Drive copy that overwrites one file
+  in a dedicated folder (Drive keeps version history for rollback). Health shows in **Settings**.
+
+### Mount the NAS for media (optional, OMV example)
+
+```bash
+sudo mkdir -p /srv/nas/recipes
+# NFS export from the NAS, for example:
+echo 'nas.local:/export/recipes  /srv/nas/recipes  nfs  defaults,_netmount,x-systemd.automount  0  0' | sudo tee -a /etc/fstab
+sudo mount -a
+```
+Then set `MEDIA_ROOT=/srv/nas/recipes/media` (and optionally `BACKUP_LOCAL_DIR=/srv/nas/recipes/backups`) in `.env` and restart. **Never** point `RECIPE_DB_PATH` at the NAS.
+
+### Run backups on a schedule (systemd timers)
+
+The backup engine is a standalone script (`python -m app.backup`) so it runs even while the
+app restarts. Create a service + two timers (nightly local, weekly Drive):
+
+```bash
+sudo tee /etc/systemd/system/recipes-backup@.service >/dev/null <<EOF
+[Unit]
+Description=Pi Recipe Site backup (%i)
+[Service]
+Type=oneshot
+User=$USER
+WorkingDirectory=$HOME/pi-recipe-site/backend
+ExecStart=$HOME/pi-recipe-site/backend/.venv/bin/python -m app.backup %i
+EOF
+
+sudo tee /etc/systemd/system/recipes-backup-local.timer >/dev/null <<'EOF'
+[Unit]
+Description=Nightly local recipe backup
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+Unit=recipes-backup@local.service
+[Install]
+WantedBy=timers.target
+EOF
+
+sudo tee /etc/systemd/system/recipes-backup-drive.timer >/dev/null <<'EOF'
+[Unit]
+Description=Weekly Drive recipe backup
+[Timer]
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+Unit=recipes-backup@drive.service
+[Install]
+WantedBy=timers.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now recipes-backup-local.timer recipes-backup-drive.timer
+systemctl list-timers 'recipes-backup*'   # confirm next run times
+```
+(You can also tap **Back up now** in the app's Settings page to run one on demand.)
+
+### Restore
+
+1. Stop the app: `sudo systemctl stop recipes`
+2. Pick a snapshot — a local one from `BACKUP_LOCAL_DIR` (e.g. `recipes-YYYYMMDD.db`), or
+   download `recipes-backup.db` from the Drive backup folder (or an older Drive *version*).
+3. Restore it over the live DB:
+   ```bash
+   cd ~/pi-recipe-site/backend && . .venv/bin/activate
+   python -m app.backup restore /path/to/recipes-YYYYMMDD.db --yes
+   ```
+4. Start the app: `sudo systemctl start recipes`
+
+Media paths still resolve because the NAS layout is unchanged. **Test a restore once on
+purpose** — a backup you've never restored is a hope, not a backup.
+
 ## Not in these chunks (by design)
 
-Recipe of the Week, thumbnails, backups → **Chunk C**. Places / eating-out → **Chunk D**.
+Places / eating-out → **Chunk D**.

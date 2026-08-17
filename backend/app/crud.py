@@ -267,6 +267,11 @@ def _card_from_row(conn: sqlite3.Connection, row: sqlite3.Row) -> RecipeCard:
     return RecipeCard(**dict(row), tags=_tags_for(conn, row["id"]))
 
 
+def get_card(conn: sqlite3.Connection, recipe_id: int) -> RecipeCard | None:
+    row = conn.execute("SELECT * FROM recipe WHERE id = ?", (recipe_id,)).fetchone()
+    return _card_from_row(conn, row) if row else None
+
+
 def list_recipes(
     conn: sqlite3.Connection,
     query: str | None = None,

@@ -78,3 +78,30 @@ def media_root() -> Path:
     """Media root, created on demand. Originals may live on the NAS in production."""
     MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
     return MEDIA_ROOT
+
+
+# ---------------------------------------------------------------------------
+# Chunk C — polish + backups
+# ---------------------------------------------------------------------------
+# Derived thumbnails live on LOCAL disk (fast, safe) even when originals are on the NAS.
+# Default alongside the DB so they land on local disk wherever RECIPE_DB_PATH points.
+THUMBS_DIR = Path(
+    os.environ.get("THUMBS_DIR", str(DB_PATH.parent / "thumbs"))
+).expanduser()
+THUMB_MAX_PX = int(os.environ.get("THUMB_MAX_PX", "480"))
+
+
+def thumbs_dir() -> Path:
+    THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+    return THUMBS_DIR
+
+
+# Backups (spec §11). Local nightly snapshots go here (often the NAS mount); the DB
+# itself never lives here. Keep the last N. Weekly Drive backup overwrites one file in
+# a DEDICATED folder — separate from the import folder so the scanner never touches it.
+BACKUP_LOCAL_DIR = Path(
+    os.environ.get("BACKUP_LOCAL_DIR", str(MEDIA_ROOT / "backups"))
+).expanduser()
+BACKUP_KEEP = int(os.environ.get("BACKUP_KEEP", "7"))
+DRIVE_BACKUP_FOLDER_ID = os.environ.get("DRIVE_BACKUP_FOLDER_ID", "").strip()
+DRIVE_BACKUP_FILENAME = os.environ.get("DRIVE_BACKUP_FILENAME", "recipes-backup.db").strip()

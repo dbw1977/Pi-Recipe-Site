@@ -19,7 +19,12 @@ from .draft import to_recipe_input
 from .errors import ExtractionError, FeatureUnavailable
 from .tags import load_tag_index
 
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# readonly → scan the user's Recipes folder (import, §5c);
+# drive.file → create/overwrite the app's own backup file (§11). One consent covers both.
+SCOPES = [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.file",
+]
 
 
 def available() -> bool:

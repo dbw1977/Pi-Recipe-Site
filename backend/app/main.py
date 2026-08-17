@@ -13,9 +13,9 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config
+from . import config, thumbnails
 from .migrations_runner import run_migrations
-from .routers import drafts, imports, recipes, tags
+from .routers import backups, drafts, featured, imports, recipes, tags
 
 
 @asynccontextmanager
@@ -25,20 +25,38 @@ async def _lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Pi Recipe Site", version="0.2.0 (Chunk B)", lifespan=_lifespan)
+    app = FastAPI(title="Pi Recipe Site", version="0.3.0 (Chunk C)", lifespan=_lifespan)
 
     @app.get("/api/health")
     def health() -> dict:
-        return {"status": "ok", "chunk": "B"}
+        return {"status": "ok", "chunk": "C"}
 
     app.include_router(recipes.router)
     app.include_router(tags.router)
     app.include_router(imports.router)
     app.include_router(drafts.router)
+    app.include_router(featured.router)
+    app.include_router(backups.router)
 
+    _mount_thumbs(app)
     _mount_media(app)
     _mount_frontend(app)
     return app
+
+
+def _mount_thumbs(app: FastAPI) -> None:
+    """Serve small derived thumbnails for the grid, generating + caching on first hit.
+    Falls back to the original image if a thumbnail can't be produced (e.g. no Pillow)."""
+
+    @app.get("/thumb/{rel_path:path}")
+    def thumb(rel_path: str):
+        cached = thumbnails.get_or_create(rel_path)
+        if cached is not None:
+            return FileResponse(str(cached), media_type="image/webp")
+        original = (config.media_root() / rel_path).resolve()
+        if original.is_file() and str(original).startswith(str(config.media_root().resolve())):
+            return FileResponse(str(original))
+        return JSONResponse({"detail": "Not found"}, status_code=404)
 
 
 def _mount_media(app: FastAPI) -> None:

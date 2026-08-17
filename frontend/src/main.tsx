@@ -8,6 +8,7 @@ import RecipeView from './pages/RecipeView';
 import RecipeEdit from './pages/RecipeEdit';
 import Import from './pages/Import';
 import Drafts from './pages/Drafts';
+import Settings from './pages/Settings';
 
 const router = createBrowserRouter([
   {
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
       { path: 'new', element: <RecipeEdit /> },
       { path: 'import', element: <Import /> },
       { path: 'drafts', element: <Drafts /> },
+      { path: 'settings', element: <Settings /> },
       { path: 'recipe/:id', element: <RecipeView /> },
       { path: 'recipe/:id/edit', element: <RecipeEdit /> },
     ],
