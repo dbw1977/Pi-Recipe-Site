@@ -212,10 +212,12 @@ export const api = {
   importUrl(url: string): Promise<ImportResponse> {
     return req<ImportResponse>('/api/imports/url', { method: 'POST', body: JSON.stringify({ url }) });
   },
-  importScreenshot(file: File, extra: File[] = []): Promise<ImportResponse> {
+  // One or more source images (read together as one recipe) or a single video,
+  // plus an optional cover photo used as the hero image.
+  importScreenshot(files: File[], cover?: File): Promise<ImportResponse> {
     const form = new FormData();
-    form.append('file', file);
-    extra.forEach((f) => form.append('extra', f));
+    files.forEach((f) => form.append('file', f));
+    if (cover) form.append('extra', cover);
     return postForm<ImportResponse>('/api/imports/screenshot', form);
   },
   importVoice(file: File, photos: File[] = []): Promise<ImportResponse> {

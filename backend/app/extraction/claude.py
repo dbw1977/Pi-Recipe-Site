@@ -127,15 +127,15 @@ def extract_from_image(
 
 
 def extract_from_images(
-    images: list[bytes],
-    media_type: str,
+    images: list[tuple[bytes, str]],
     allowed_by_category: dict[str, list[str]],
     *,
     instruction: str | None = None,
 ) -> ExtractedRecipe:
-    """Extract one recipe from several images at once — e.g. frames sampled from a video."""
+    """Extract one recipe from several images at once — multiple screenshots of the same
+    recipe, or frames sampled from a video. `images` is a list of (bytes, media_type)."""
     content: list[dict] = []
-    for img in images:
+    for img, media_type in images:
         b64 = base64.standard_b64encode(img).decode("ascii")
         content.append(
             {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}}

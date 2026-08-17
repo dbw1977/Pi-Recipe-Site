@@ -113,7 +113,9 @@ def import_video(
         raise FeatureUnavailable(
             "That video produced no readable frames. Try a screenshot of the recipe instead."
         )
-    extracted = claude.extract_from_images(frames, "image/jpeg", tag_index.allowed_by_category)
+    extracted = claude.extract_from_images(
+        [(f, "image/jpeg") for f in frames], tag_index.allowed_by_category
+    )
 
     # Keep the original video in the media store.
     video_rel = media.save_bytes(video_bytes, content_type=content_type, filename="video")

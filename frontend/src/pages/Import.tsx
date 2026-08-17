@@ -120,12 +120,12 @@ function ScreenshotCard({
   const videoReady = !status || status.video !== false;
 
   const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     setBusy(true);
     setErr(null);
     try {
-      onImported(await api.importScreenshot(file, cover ? [cover] : []));
+      onImported(await api.importScreenshot(files, cover ?? undefined));
     } catch (er) {
       setErr((er as Error).message);
     } finally {
@@ -179,12 +179,18 @@ function ScreenshotCard({
         ref={sourceRef}
         type="file"
         accept="image/*,video/*"
+        multiple
         className="hidden"
         onChange={pick}
       />
       <button onClick={() => sourceRef.current?.click()} disabled={busy} className="btn-primary w-full">
-        {busy ? 'Reading…' : '📷 Choose screenshot or video'}
+        {busy ? 'Reading…' : '📷 Choose screenshots or a video'}
       </button>
+      <p className="mt-2 text-xs text-muted">
+        Pick <strong>several screenshots</strong> of the same recipe (e.g. a caption split across
+        images, or ingredients and steps on separate screens) and they're combined into one
+        recipe — or pick a single video.
+      </p>
       {!videoReady && (
         <p className="mt-2 text-xs text-muted">
           Videos need <code>ffmpeg</code> installed on the Pi; screenshots work now.

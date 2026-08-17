@@ -150,7 +150,7 @@ Enable them by adding keys to `.env` (see `.env.example`). Easiest first:
 | Path | Needs | Notes |
 |---|---|---|
 | **URL** | *nothing* for supported sites | Uses `recipe-scrapers` offline. Unsupported sites (and Reddit posts) use the Claude fallback (needs the Anthropic key). |
-| **Screenshot** | `ANTHROPIC_API_KEY` | Claude vision reads the image (Instagram etc.). |
+| **Screenshot** | `ANTHROPIC_API_KEY` | Claude vision reads the image(s). Select **multiple** screenshots of one recipe (caption + steps on separate screens) and they're combined into a single recipe. |
 | **Video** | `ANTHROPIC_API_KEY` + `ffmpeg` | Same importer as screenshots: ffmpeg samples frames from a downloaded clip, Claude reads them. `sudo apt install ffmpeg`. |
 | **Voice** | `WHISPER_BIN` + `WHISPER_MODEL` + `ANTHROPIC_API_KEY` | whisper.cpp transcribes locally, Claude structures. |
 | **Google Drive** | `GOOGLE_CLIENT_SECRETS` + `DRIVE_FOLDER_ID` | One-time OAuth, then a manual "Scan" button. |

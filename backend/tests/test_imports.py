@@ -92,7 +92,7 @@ def _fake_extracted() -> ExtractedRecipe:
 
 def test_screenshot_import_with_mocked_vision(client: TestClient, monkeypatch):
     monkeypatch.setattr(claude, "available", lambda: True)
-    monkeypatch.setattr(claude, "extract_from_image", lambda *a, **k: _fake_extracted())
+    monkeypatch.setattr(claude, "extract_from_images", lambda *a, **k: _fake_extracted())
 
     r = client.post("/api/imports/screenshot", files={"file": ("shot.jpg", b"\xff\xd8fake", "image/jpeg")})
     assert r.status_code == 200, r.text
@@ -104,6 +104,34 @@ def test_screenshot_import_with_mocked_vision(client: TestClient, monkeypatch):
     tag_names = {t["name"] for t in draft["tags"]}
     assert {"Salad", "Beef", "Grill", "No-Cook"} <= tag_names
     assert draft["equipment"][0]["inferred"] == 1
+
+
+def test_screenshot_import_multiple_files(client: TestClient, monkeypatch):
+    monkeypatch.setattr(claude, "available", lambda: True)
+    seen = {}
+
+    def fake_images(images, allowed, **k):
+        seen["n"] = len(images)
+        return _fake_extracted()
+
+    monkeypatch.setattr(claude, "extract_from_images", fake_images)
+
+    # Three screenshots of one recipe + a cover photo (sent as `extra`).
+    r = client.post(
+        "/api/imports/screenshot",
+        files=[
+            ("file", ("a.jpg", b"\xff\xd8a", "image/jpeg")),
+            ("file", ("b.png", b"\x89PNGb", "image/png")),
+            ("file", ("c.jpg", b"\xff\xd8c", "image/jpeg")),
+            ("extra", ("cover.jpg", b"\xff\xd8cover", "image/jpeg")),
+        ],
+    )
+    assert r.status_code == 200, r.text
+    assert seen["n"] == 3  # all three screenshots read together as one recipe
+    draft = r.json()["draft"]
+    assert draft["hero_image"]  # cover photo set as hero
+    # 3 screenshots + 1 cover are all stored as media.
+    assert len(client.get(f"/api/recipes/{draft['id']}").json()["groups"]) >= 1
 
 
 # --------------------------------------------------------------------------- #

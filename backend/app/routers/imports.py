@@ -13,7 +13,7 @@ from .. import crud
 from ..db import get_connection, transaction
 from ..extraction import claude, drive, url_import, video, voice
 from ..extraction.errors import ExtractionError, FeatureUnavailable
-from ..extraction.screenshot import import_screenshot
+from ..extraction.screenshot import import_screenshots
 from ..extraction.duplicates import find_duplicate
 from ..schemas import RecipeIn
 
@@ -89,31 +89,36 @@ def import_url_endpoint(payload: UrlIn):
 
 
 # --------------------------------------------------------------------------- #
-# Screenshot OR video (multipart: primary file + optional cover photo)
-#   - primary is an image  -> Claude vision reads the screenshot
-#   - primary is a video   -> ffmpeg samples frames, Claude vision reads them
-# An optional extra image is used as the recipe's cover (hero) photo.
+# Screenshot(s) OR video (multipart: one or more `file` parts + optional `extra` cover)
+#   - files are images -> Claude vision reads them all together as one recipe
+#   - first file is a video -> ffmpeg samples frames, Claude vision reads them
+# An optional `extra` image is used as the recipe's cover (hero) photo.
 # --------------------------------------------------------------------------- #
 @router.post("/screenshot")
 async def import_screenshot_endpoint(
-    file: UploadFile = File(...),
+    file: list[UploadFile] = File(...),
     extra: list[UploadFile] | None = File(default=None),
 ):
-    primary_bytes = await file.read()
-    extra_media = []
+    primaries = [(await uf.read(), uf.content_type) for uf in file]
+
+    # First supplied image among `extra` is the cover/hero photo.
+    cover: tuple[bytes, str | None] | None = None
     for uf in extra or []:
         data = await uf.read()
         ctype = uf.content_type or ""
-        kind = "video" if ctype.startswith("video/") else "image"
-        extra_media.append((data, ctype, kind))
+        if ctype.startswith("image/") and cover is None:
+            cover = (data, ctype)
 
-    is_video = (file.content_type or "").startswith("video/")
+    is_video = (file[0].content_type or "").startswith("video/")
     conn = get_connection()
     try:
         if is_video:
-            result = video.import_video(conn, primary_bytes, file.content_type, extra_media=extra_media)
+            vbytes, vct = primaries[0]
+            extra_media = [(cover[0], cover[1], "image")] if cover else None
+            result = video.import_video(conn, vbytes, vct, extra_media=extra_media)
         else:
-            result = import_screenshot(conn, primary_bytes, file.content_type, extra_media=extra_media)
+            images = [(b, ct) for b, ct in primaries if (ct or "").startswith("image/")]
+            result = import_screenshots(conn, images, cover=cover)
     except FeatureUnavailable as e:
         raise HTTPException(status_code=503, detail=e.message)
     except ExtractionError as e:

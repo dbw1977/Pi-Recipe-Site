@@ -49,7 +49,7 @@ def test_video_import_samples_frames_and_sets_hero(client: TestClient, monkeypat
     seen = {}
     monkeypatch.setattr(video, "extract_frames", lambda *a, **k: [b"f1", b"f2", b"f3"])
 
-    def fake_images(images, media_type, allowed, **k):
+    def fake_images(images, allowed, **k):
         seen["n"] = len(images)
         return _fake_extracted()
 
