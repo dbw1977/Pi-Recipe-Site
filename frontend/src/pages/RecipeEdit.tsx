@@ -392,6 +392,12 @@ export default function RecipeEdit() {
       {/* Tags */}
       <section className="card space-y-3 p-4">
         <h2 className="text-lg font-semibold">Tags</h2>
+        {reviewing && (
+          <p className="-mt-1 text-sm text-muted">
+            Auto-selected from the recipe — highlighted ones are on. Tap to add or remove; no
+            need to fuss over them.
+          </p>
+        )}
         {categories.filter((c) => c.tags.length).map((cat) => (
           <div key={cat.id}>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">{cat.name}</div>

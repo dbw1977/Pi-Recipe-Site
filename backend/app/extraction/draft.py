@@ -12,6 +12,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, ValidationError
 
 from ..schemas import EquipmentIn, GroupIn, IngredientIn, RecipeIn, StepIn
+from . import autotag
 
 
 # --------------------------------------------------------------------------- #
@@ -139,6 +140,20 @@ def to_recipe_input(
         for i, e in enumerate(extracted.equipment)
         if e.name and e.name.strip()
     ]
+
+    # Auto-select tags from the recipe's own words so drafts arrive tagged for approval,
+    # not blank. Merged with (never overriding) whatever the AI already suggested; both
+    # are constrained to the controlled vocabulary by TagIndex.resolve (rule 7).
+    auto_tags = autotag.suggest_tags(
+        title=extracted.title,
+        description=extracted.description,
+        ingredient_names=[ing.name for g in extracted.groups for ing in g.ingredients if ing.name],
+        steps=list(extracted.steps),
+        total_time=extracted.total_time,
+        allowed_by_category=tag_index.allowed_by_category,
+    )
+    tag_ids = tag_index.resolve(autotag.merge_tag_names(extracted.tags, auto_tags))
+
     return RecipeIn(
         title=(extracted.title or "Untitled import").strip(),
         description=extracted.description,
@@ -154,5 +169,5 @@ def to_recipe_input(
         groups=groups,
         steps=steps,
         equipment=equipment,
-        tag_ids=tag_index.resolve(extracted.tags),
+        tag_ids=tag_ids,
     )
