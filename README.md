@@ -1,12 +1,17 @@
 # Pi Recipe Site
 
-A self-hosted, phone-first recipe app for two people on a home LAN, running on a
-Raspberry Pi 4. This repo is being built in four chunks (A → D); see `BUILD-ORDER.md`
-and `recipe-app-spec.md`. **`CLAUDE.md` holds the always-on guardrails.**
+A self-hosted, phone-first **food app** for two people on a home LAN, running on a
+Raspberry Pi 4. Built in six chunks (A → F); see `BUILD-ORDER.md` and `recipe-app-spec.md`.
+**`CLAUDE.md` holds the always-on guardrails.**
 
-**Current status: Chunk A — the working manual app.** Type recipes in by hand, view them,
-scale 1×/2×/3× with kitchen-friendly measurements, and search the library. No AI, no
-imports, no network calls (those arrive in Chunk B).
+**Status: complete (Chunks A–F).** A recipe library with kitchen-friendly 1×/2×/3× scaling
+and FTS search; four import methods (URL/Reddit, screenshot/video, voice, Google Drive) with
+a review/Drafts queue and auto-tagging; Recipe of the Week, thumbnails, and backup/restore;
+an **Eat Out / Places** collection with a printable city export; a **weekly meal planner** with
+a consolidated grocery list; and an **AI recipe-variation** builder — plus device photo upload.
+
+> **Want to build your own?** See **[`BUILD-IT-YOURSELF.md`](BUILD-IT-YOURSELF.md)** — a
+> ready-to-paste prompt (and the file set) to hand this whole app to your own coding AI.
 
 ---
 
