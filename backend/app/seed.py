@@ -40,6 +40,10 @@ TAXONOMY: dict[str, list[str]] = {
     "Occasion": [
         "Summer", "Fall/Winter", "Holiday", "Game Day", "Party", "Date Night",
     ],
+    # A cook-status dimension you set by hand — auto-tagging never touches these.
+    "Status": [
+        "Want to Cook", "Have Cooked",
+    ],
 }
 
 # Chunk D (spec §14): dimensions that belong to the Places collection. City/Area is
