@@ -129,13 +129,15 @@ def create_recipe(conn: sqlite3.Connection, data: RecipeIn) -> int:
         """
         INSERT INTO recipe(
             title, description, source_type, source_name, source_url, source_handle,
-            hero_image, servings_base, servings_unit, total_time, created_at, updated_at, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            hero_image, servings_base, servings_unit, total_time, created_at, updated_at, status,
+            generated, derived_from_recipe_id, generation_prompt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.title, data.description, data.source_type, data.source_name,
             data.source_url, data.source_handle, data.hero_image, data.servings_base,
             data.servings_unit, data.total_time, now, now, data.status,
+            data.generated, data.derived_from_recipe_id, data.generation_prompt,
         ),
     )
     recipe_id = cur.lastrowid
@@ -200,6 +202,14 @@ def set_status(conn: sqlite3.Connection, recipe_id: int, status: str) -> bool:
     return cur.rowcount > 0
 
 
+def set_hero(conn: sqlite3.Connection, recipe_id: int, hero_image: str) -> bool:
+    cur = conn.execute(
+        "UPDATE recipe SET hero_image = ?, updated_at = ? WHERE id = ?",
+        (hero_image, _now(), recipe_id),
+    )
+    return cur.rowcount > 0
+
+
 # --------------------------------------------------------------------------- #
 # Read helpers
 # --------------------------------------------------------------------------- #
@@ -254,12 +264,20 @@ def get_recipe(conn: sqlite3.Connection, recipe_id: int) -> RecipeOut | None:
             (recipe_id,),
         )
     ]
+    derived_from_title = None
+    if r["derived_from_recipe_id"] is not None:
+        src = conn.execute(
+            "SELECT title FROM recipe WHERE id = ?", (r["derived_from_recipe_id"],)
+        ).fetchone()
+        derived_from_title = src["title"] if src else None
+
     return RecipeOut(
         **dict(r),
         groups=groups,
         steps=steps,
         equipment=equipment,
         tags=_tags_for(conn, recipe_id),
+        derived_from_title=derived_from_title,
     )
 
 

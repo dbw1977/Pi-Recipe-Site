@@ -2,7 +2,7 @@
 
 A self-hosted recipe library for two people (you + your wife), running on a Raspberry Pi on your home LAN. Import recipes from URLs, Instagram screenshots, a Google Drive folder, or voice notes. Auto-categorize with tags, strip the life-story filler, show clean instructions, and scale 1x/2x/3x with kitchen-friendly measurements.
 
-This document is the scope hand-off for Claude Code. Build it in three chunks (see §16).
+This document is the scope hand-off for Claude Code. Build it in chunks (see §16).
 
 ---
 
@@ -305,7 +305,7 @@ Summer · Fall/Winter · Holiday · Game Day · Party · Date Night
   - Below it, the **search bar** (see "Search" below), then **tag filters** (filter by any dimension; combine filters), then the **grid of recipe cards** (hero image, title, source, key tags).
 - **Recipe view (the "just the recipe" page):**
   - Title, source/author (with @handle and link to original if any).
-  - **Media:** if the recipe has an attached video, show a video player at the top (muted, tap to play); otherwise show the hero image. Extra photos in a small gallery.
+  - **Media:** if the recipe has an attached video, show a video player at the top (muted, tap to play); otherwise show the hero image. Extra photos in a small gallery. You can **upload or take a photo from your device** to set the hero or add to the gallery (§18, built in Chunk F).
   - **1x / 2x / 3x** toggle at the top; changing it re-renders all scalable quantities instantly.
   - **Ingredients**, grouped by section, with checkboxes to tick off while shopping/cooking.
   - **Equipment / Utensils** — a clear, separate list of what you need (grill, whisk, mixing bowl, sheet pan, etc.). AI-inferred items may be shown with a subtle marker. When the scale is set above 1x, show a light reminder that larger or additional vessels may be needed (e.g. a bigger pot / a second sheet pan) — equipment itself is not scaled.
@@ -331,6 +331,15 @@ Summer · Fall/Winter · Holiday · Game Day · Party · Date Night
 - Big tap targets, high contrast, works one-handed.
 - Fast on a Pi 4: static build, lazy-load images, thumbnails for the grid.
 - Wake-lock button is **deferred** (§12) — leave a clear spot for it later.
+
+**Navigation & density (clean, tight UI)**
+As features accumulate (scaling, equipment, add-to-plan, AI variation), screens get crowded — the recipe view especially. Hold the line with a clear hierarchy:
+- **Persistent header on every page** with the app name/logo on the left that **always links back to the home/library** (the "return to homepage" link), the **Cook ⇄ Eat Out** toggle, and a search affordance. Sticky on mobile, compact, and quiet — it should recede, not compete with content.
+- **One primary action per screen; everything else in an overflow menu.** On the recipe view, the **1x/2x/3x scale toggle stays inline** (it's core to using the recipe); **Edit, Add to meal plan, Create AI variation, Share/Export, and Delete move into a single "⋮" (overflow) menu** so the page stays about the recipe, not the buttons.
+- **Content-first:** ingredients and steps dominate; chrome recedes. Restrained typography (don't bold everything), a single consistent spacing scale, and one button system (primary / secondary / ghost) used everywhere.
+- **Consistent detail-page pattern:** a shared header/back affordance and the same overflow-menu pattern across recipe, place, planner, and review screens.
+
+This is tightened as part of Chunk F (§18) — a focused polish pass over the existing screens, not a redesign.
 
 ---
 
@@ -565,9 +574,9 @@ Things not yet nailed down — worth a decision now or a conscious "later," beca
 
 ---
 
-## 16. Build Plan (three chunks)
+## 16. Build Plan (chunks)
 
-Grouped into three chunks you hand to Claude Code one at a time, verifying each before the next. Chunk A is kept separate on purpose — it holds the foundation and the one genuinely bug-prone piece (the scaling engine), so it's worth getting right in isolation before anything auto-extracted stacks on top. Chunks B and C can each be built in a single pass.
+Grouped into chunks you hand to Claude Code one at a time, verifying each before the next. Chunk A is kept separate on purpose — it holds the foundation and the one genuinely bug-prone piece (the scaling engine), so it's worth getting right in isolation before anything auto-extracted stacks on top. The later chunks can each be built in a single pass and are additive.
 
 ### Chunk A — Working manual app (build and verify on its own)
 The whole app, usable, with no AI and no imports yet.
@@ -597,9 +606,141 @@ The widened scope (§14). Because it reuses the core (tags, media, Drafts queue,
 - Reuse the import + review pipeline; add the Maps-link field and the curated-list export for sharing.
 - **Done =** you can save where to eat and what to order, filter by city, and export a list to share with visitors.
 
+### Chunk E — Meal Planner & Grocery List (additive)
+The meal planner (§17). Mostly **deterministic** — it reuses the Chunk A scaling engine to aggregate ingredients; AI is only an optional enhancement. Slots in any time after Chunk A (and after Chunk D if you want to schedule eat-out days).
+- Add the `meal_plan` / `meal_plan_entry` / `grocery_item` tables; a 7-day planner board (default Sat–Fri, any start date); assign recipes to days with an optional per-assignment scale factor.
+- Generate a consolidated, checkable, aisle-grouped **grocery list** from the assigned recipes; export/print it (reuses the §14 export).
+- **Done =** pick a week of recipes, assign them to days, and get one shopping list for everything.
+
+### Chunk F — AI Recipe Builder + UI Clean-Up + Photo Upload (additive + a UI polish pass)
+Three things in one update: the AI variation feature (§18), a focused UI clean-up (§9 "Navigation & density"), and direct photo upload. The AI part takes a saved recipe + a natural-language instruction ("make me a patty melt version") and returns a realistic structured variation, **saved immediately as a draft** in the Drafts queue, using **`claude-sonnet-5`**; gated by the API key. The UI part tightens the now-crowded screens and adds a **persistent home link**. Photo upload lets you set a hero image from your **phone camera/library**.
+- AI: lineage columns (`generated`, `derived_from_recipe_id`, `generation_prompt`); a generation endpoint; the result **persisted as a draft** then opened for review; "Create AI variation" UI with presets and iterate/refine; AI-generated+untested marking; never credit the original human creator.
+- UI: a persistent header with a home/library link + Cook⇄Eat Out toggle + search; consolidate recipe-view actions into a "⋮" overflow menu (keep the scale toggle inline); one consistent spacing/type/button system. A refactor of existing screens — preserve all behavior.
+- Photo upload: camera/library upload → local store → set hero or add to gallery, with EXIF-orientation fix + downscale + thumbnail. Reuses `media` + `hero_image` (no schema change).
+- **Done =** describe a change to any saved recipe and get an editable draft variation, upload your own dish photos, all on a cleaner UI you can always get home from.
+
 ### Deferred (not a chunk — real blockers)
 - **Screen wake-lock (§12)** — needs HTTPS, which you chose to skip for now.
 - **Auth** — none in v1 (home network only).
 - **Drive auto-sync** — background watcher; v1 is the manual Scan button.
+- **Pantry inventory + receipt-photo restocking** — a larger, AI-heavy subsystem; candidate **Chunk G** (see §15 and §17), intentionally out of the meal planner.
 
 Build Chunk A first and confirm the scaling is correct before moving on — it's the foundation everything else rests on.
+
+---
+
+## 17. Meal Planner & Grocery List (Chunk E)
+
+**This is mostly a deterministic feature, not an AI one.** The core reuses the Chunk A scaling/unit engine to aggregate ingredients; the Anthropic API is an *optional* enhancement that degrades gracefully when no key is present (CLAUDE.md rule 8). Good news, since it means the planner is cheap, fast, and works offline.
+
+### Concept
+Pick a **7-day window** (the UI defaults to the upcoming **Saturday–Friday**, but any start date is allowed), assign one or more library recipes to each day (optionally with a per-assignment **scale factor** for leftovers/batch cooking), then generate a consolidated, checkable **grocery list** of everything needed to cook — grouped by aisle, exportable and printable.
+
+### Data model additions
+```sql
+CREATE TABLE meal_plan (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT,                 -- optional, e.g. 'Week of Nov 8'
+  start_date TEXT NOT NULL,        -- ISO date; UI defaults to the upcoming Saturday
+  created_at TEXT,
+  updated_at TEXT
+);  -- a plan spans start_date .. start_date + 6 days
+
+CREATE TABLE meal_plan_entry (     -- one recipe (or eat-out place) assigned to a day
+  id           INTEGER PRIMARY KEY,
+  meal_plan_id INTEGER REFERENCES meal_plan(id) ON DELETE CASCADE,
+  date         TEXT NOT NULL,      -- the specific day within the plan
+  recipe_id    INTEGER REFERENCES recipe(id) ON DELETE SET NULL,
+  place_id     INTEGER REFERENCES place(id) ON DELETE SET NULL,  -- optional eat-out day (no groceries)
+  meal_slot    TEXT,              -- optional: 'breakfast' | 'lunch' | 'dinner' | 'other'
+  scale        REAL DEFAULT 1,    -- per-assignment multiplier; feeds the grocery math
+  note         TEXT,
+  sort_order   INTEGER
+);  -- exactly one of recipe_id / place_id is set
+
+CREATE TABLE grocery_item (        -- generated from a plan; preserves check state + manual adds
+  id            INTEGER PRIMARY KEY,
+  meal_plan_id  INTEGER REFERENCES meal_plan(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,     -- normalized shopping name ('garlic', not 'minced garlic')
+  quantity      REAL,             -- aggregated; null for 'to taste' / unmeasured
+  unit          TEXT,
+  category      TEXT,             -- aisle: Produce | Dairy | Meat & Seafood | Pantry | Frozen | Bakery | Other
+  checked       INTEGER DEFAULT 0, -- tick off while shopping
+  manual        INTEGER DEFAULT 0, -- user-added, not from a recipe
+  source_recipe_ids TEXT,         -- JSON array, for a "why is this here" hint
+  sort_order    INTEGER
+);
+```
+
+### Grocery list generation (deterministic core)
+1. Collect every ingredient from each assigned **recipe**, multiplied by that entry's `scale` (normalized to the recipe's base servings). Eat-out (`place_id`) entries contribute nothing.
+2. **Normalize names** for merging: lowercase, strip prep/size words (minced, diced, chopped, sliced, fresh, large, small), fold singular/plural. So "garlic cloves" + "minced garlic" → "garlic".
+3. **Merge & sum** within a compatible unit family using the **Chunk A scaling engine** (convert to base unit, sum, re-express with kitchen-friendly snapping — 2 cloves + 2 cloves + 2 cloves = 6 cloves; ¼ cup + ¼ cup = ½ cup). Same name but **incompatible units** (e.g. "1 onion" vs "½ cup onion") stay as separate lines, flagged for the shopper to reconcile.
+4. **Quantity-less items** ("salt to taste"; assembly items like "sliced steak" with no qty) are listed once, without a quantity, under their aisle.
+5. **Categorize by aisle** via a built-in lookup of common ingredients; unknowns → "Other".
+6. **Preserve state on regeneration:** re-generating a plan's list keeps `checked` state and `manual` items (match on name + unit); only recipe-derived quantities refresh.
+
+### Optional AI enhancements (need the API key; skip cleanly without it)
+- **Smarter merging** for tricky same-item/different-wording or cross-unit cases the normalizer misses.
+- **Aisle categorization** for items not in the lookup table.
+With no `ANTHROPIC_API_KEY`, the list still generates via the deterministic path — these only improve tidiness.
+
+### UI
+- **Planner board:** a start-date picker (defaults to the upcoming Saturday) and a 7-day board (Sat→Fri). Per day: add recipe(s) via a picker that reuses search/filters (§9); set optional slot + scale; reorder/remove. Optional: mark a day "eating out" and attach a Place (§14).
+- **From a recipe:** an "Add to meal plan" quick action.
+- **Grocery list view:** generated from the plan, grouped by aisle, each item checkable; add manual items ("paper towels", "we're out of olive oil"); a "why" hint shows contributing recipes. **Export/print** reuses the §14 image/PDF export, plus a copy-as-text option for pasting into notes or a message.
+
+### Explicitly deferred — pantry inventory + receipts (candidate Chunk G)
+Your original idea of a live **food inventory** kept in the site and updated from **uploaded receipt photos** (OCR → line items → reconcile against a pantry), plus an inventory-aware "only buy what you're missing" list, is a much larger, genuinely AI-heavy subsystem with real accuracy and upkeep challenges — receipt line items are cryptic ("GV WHP CRM"), and an inventory drifts out of sync the moment it's not perfectly maintained. It's kept **out of Chunk E** and proposed as an optional **Chunk G** if you want it. The planner + grocery list above is complete and useful on its own without it.
+
+---
+
+## 18. AI Recipe Builder — Variations (Chunk F)
+
+**This is a genuinely AI-centric feature** (unlike the mostly-deterministic meal planner). It takes a recipe already saved on the site plus a natural-language instruction ("make me a patty melt version of this") and returns a **realistic structured variation** as a draft — using the same schema and review pipeline as imports, so downstream it behaves like any other recipe.
+
+### Model
+Use **`claude-sonnet-5`** by default. Generating a coherent, realistic recipe is a reasoning + culinary-knowledge task where model quality matters — unlike the Haiku-grade *extraction* work in Chunk B. (Optionally escalate to Opus for especially complex transforms.) Cost stays small: ~1–2K tokens in / ~1K out, cents at most per variation.
+
+### Flow
+1. From a recipe view, the user clicks **"Create AI variation"**, then types an instruction (or picks a preset) such as *"make me a patty melt version."*
+2. The backend sends Claude: a recipe-developer system prompt, the **full structured source recipe** (title, grouped structured ingredients, steps, equipment, tags, base servings), the transformation request, and the **strict output schema** — the same draft JSON as imports — with realism + kitchen-friendly + controlled-tag constraints, **JSON only**. Retry once on parse failure.
+3. The result is **immediately persisted as a draft** (`status='draft'`, `generated=1`, `derived_from_recipe_id`, `generation_prompt`, `source_type='ai'`) — it appears in the **Drafts queue (§6)** right away, so it's never lost if the user navigates away — and opens in the **review screen** for editing. **Never auto-published;** the user approves it like any import.
+4. **Iterate:** from a generated draft the user can refine ("make it cheesier," "less spicy") — the same flow with the current draft as the new source.
+
+### Schema additions (non-destructive)
+Add to `recipe`: `generated INTEGER DEFAULT 0`, `derived_from_recipe_id INTEGER REFERENCES recipe(id)`, `generation_prompt TEXT`. Extend `source_type` with `'ai'`.
+
+### Attribution & honesty (important)
+- A generated variation is **not** attributed to the original human creator. Store the lineage (`derived_from_recipe_id`) and show *"AI variation of '[Source Title]'"* with a link, but the new recipe's source is the app/AI — never put an AI-invented recipe in a real creator's name (e.g. don't credit Over The Fire Cooking for a patty melt the model wrote).
+- Mark generated recipes visibly as **AI-generated and untested** ("a starting point — review before cooking"), since no human has actually made it.
+
+### Generation constraints (enforce in the prompt)
+- A **realistic, coherent** recipe: adapt technique and ingredients sensibly to the request while preserving what makes sense from the original.
+- Structured ingredients only; **kitchen-friendly quantities** (§7); realistic amounts and times.
+- Tags from the **controlled list** (§8); infer equipment with the `inferred` flag.
+- Keep base servings consistent with the source unless the instruction says otherwise.
+
+### UI
+- **"Create AI variation"** on the recipe view: an instruction box + **quick presets** (vegetarian, spicier, healthier, kid-friendly, slow-cooker/air-fryer conversion, scale for a crowd, "different cuisine…"). Presets just prefill the instruction.
+- A generating state; the result lands in the review screen.
+- On generated recipes (card + view): an **"AI variation of [source]"** badge and the untested note. Optional: a diff view highlighting what changed from the source.
+
+### Worked example
+Source: a saved "Bacon Jam Burgers" recipe. Instruction: *"make me a patty melt version."* A good result swaps the bun for griddled rye, uses Swiss, leans the bacon-jam sweetness into caramelized onions, griddles the assembled sandwich, and adjusts steps + equipment accordingly — returned structured, as a draft, clearly marked an AI variation of the original.
+
+### Requires the API key
+Like Chunk B, gated by `ANTHROPIC_API_KEY`; with no key the feature is disabled gracefully (CLAUDE.md rule 8).
+
+### UI consolidation pass (bundled into this chunk)
+Adding the "Create AI variation" action is what tips the recipe view into feeling crowded, so Chunk F also does a **focused clean-up of the existing UI** (see §9 "Navigation & density") — a polish pass, not a redesign, preserving all existing behavior:
+- Introduce a **persistent header on every page** with a **home/library link** (app name/logo, left), the **Cook ⇄ Eat Out** toggle, and search. Sticky and quiet on mobile.
+- **Consolidate the recipe-view actions** into a single **"⋮" overflow menu** (Edit, Add to meal plan, Create AI variation, Share/Export, Delete); keep only the **1x/2x/3x scale toggle inline**.
+- Apply the shared spacing/typography/button system and the same detail-page pattern across recipe, place, planner, and review screens.
+
+### Direct photo upload (bundled into this chunk)
+Hero images can already come from imports; add the ability to **upload or take a photo from your own device** — for when you cook something yourself and want your own photo on it. No schema change (reuses the `media` table + `hero_image`).
+- On the recipe view/edit and the review screen: an **"Add / take photo"** action (in the ⋮ menu and on the edit form). Use a standard file input with `accept="image/*"` and `capture="environment"` so phones offer **camera or photo library** — this works over plain LAN HTTP (no `getUserMedia`/HTTPS needed).
+- The uploaded image is **stored locally** in the media store (originals on the NAS), set as the **hero** (or added to the gallery), and a **thumbnail** is generated (Chunk C pipeline).
+- **Fix EXIF orientation** on upload (phone photos are often rotated) and **downscale oversized images** so the Pi and the grid stay fast.
+- Applies to recipes; the same uploader can be reused for places (dish photos) with no extra design.

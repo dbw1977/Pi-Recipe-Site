@@ -62,6 +62,10 @@ export interface Recipe {
   steps: Step[];
   equipment: Equipment[];
   tags: Tag[];
+  generated?: number;
+  derived_from_recipe_id?: number | null;
+  derived_from_title?: string | null;
+  generation_prompt?: string | null;
 }
 
 export interface RecipeCard {
@@ -75,6 +79,7 @@ export interface RecipeCard {
   total_time: number | null;
   status: string;
   tags: Tag[];
+  generated?: number;
 }
 
 export interface DraftCard extends RecipeCard {
@@ -317,6 +322,23 @@ export const api = {
   },
   deleteRecipe(id: number): Promise<void> {
     return req<void>(`/api/recipes/${id}`, { method: 'DELETE' });
+  },
+  createVariation(recipeId: number, instruction: string): Promise<ImportResponse> {
+    return req<ImportResponse>(`/api/recipes/${recipeId}/variations`, {
+      method: 'POST',
+      body: JSON.stringify({ instruction }),
+    });
+  },
+  setRecipeHero(recipeId: number, heroImage: string): Promise<Recipe> {
+    return req<Recipe>(`/api/recipes/${recipeId}/hero`, {
+      method: 'POST',
+      body: JSON.stringify({ hero_image: heroImage }),
+    });
+  },
+  uploadPhoto(file: File): Promise<{ path: string }> {
+    const form = new FormData();
+    form.append('file', file);
+    return postForm<{ path: string }>('/api/media/upload', form);
   },
   listTags(collection: 'recipe' | 'place' | 'all' = 'recipe'): Promise<TagCategory[]> {
     return req<TagCategory[]>(`/api/tags?collection=${collection}`);

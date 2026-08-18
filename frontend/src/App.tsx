@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { api } from './api';
 
 export default function App() {
   const location = useLocation();
-  const navigate = useNavigate();
   const path = location.pathname;
   const eat = path === '/eat' || path.startsWith('/eat/');
   const collectionRoot = eat ? '/eat' : '/';
-  const atRoot = path === '/' || path === '/eat';
   const [draftCount, setDraftCount] = useState(0);
 
   // Keep the drafts badge current for the active collection.
@@ -25,12 +23,12 @@ export default function App() {
         <div className="mx-auto max-w-3xl px-4 py-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              {!atRoot && (
-                <button onClick={() => navigate(-1)} aria-label="Back" className="btn-ghost !px-3 !py-2">
-                  ‹
-                </button>
-              )}
-              {/* Collection toggle — the app's identity + the Cook/Eat Out switch */}
+              {/* Persistent home link — tapping the logo/name returns to the library (spec §9) */}
+              <Link to="/" aria-label="Home" className="flex items-center gap-1 font-display text-lg font-semibold text-ember">
+                <span aria-hidden>🍲</span>
+                <span className="hidden sm:inline">Our Kitchen</span>
+              </Link>
+              {/* Collection toggle — the Cook / Eat Out switch */}
               <div className="flex rounded-xl bg-white/70 p-0.5 ring-1 ring-black/5">
                 <Link
                   to="/"

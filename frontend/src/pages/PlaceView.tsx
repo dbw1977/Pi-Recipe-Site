@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api, Place } from '../api';
 import { mediaUrl } from './Library';
 import { priceLabel, ratingStars } from './PlacesLibrary';
+import OverflowMenu from '../components/OverflowMenu';
 
 export function mapsHref(place: Place): string {
   if (place.maps_url) return place.maps_url;
@@ -50,11 +51,17 @@ export default function PlaceView() {
         <div className="p-4">
           <div className="flex items-start justify-between gap-2">
             <h1 className="font-display text-2xl font-semibold leading-tight">{place.name}</h1>
-            {!place.visited && (
-              <span className="chip shrink-0 bg-ember/10 !text-[12px] font-semibold text-emberDark">
-                Want to try
-              </span>
-            )}
+            <div className="flex shrink-0 items-center gap-1.5">
+              {!place.visited && (
+                <span className="chip bg-ember/10 !text-[12px] font-semibold text-emberDark">Want to try</span>
+              )}
+              <OverflowMenu
+                items={[
+                  { label: '✎ Edit', onClick: () => navigate(`/eat/place/${place.id}/edit`) },
+                  { label: '🗑 Delete', onClick: onDelete, danger: true },
+                ]}
+              />
+            </div>
           </div>
           <p className="mt-1 text-sm text-muted">
             {meta.join(' · ')}
@@ -112,15 +119,6 @@ export default function PlaceView() {
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex gap-2">
-        <Link to={`/eat/place/${place.id}/edit`} className="btn-ghost flex-1">
-          Edit
-        </Link>
-        <button onClick={onDelete} className="btn-ghost flex-1 !text-ember">
-          Delete
-        </button>
-      </div>
     </article>
   );
 }

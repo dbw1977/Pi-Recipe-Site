@@ -7,6 +7,7 @@ False and callers raise FeatureUnavailable with a clear message (CLAUDE.md rule 
 from __future__ import annotations
 
 import base64
+import json
 
 from .. import config
 from .draft import ExtractedPlace, ExtractedRecipe, parse_extracted_json, parse_place_json
@@ -92,20 +93,27 @@ def _call(content: list[dict], *, model: str, system: str = _SYSTEM) -> str:
     return "".join(getattr(b, "text", "") for b in msg.content).strip()
 
 
-def _extract(content: list[dict], allowed_by_category: dict[str, list[str]]) -> ExtractedRecipe:
-    """Call Claude, parse JSON. On parse failure retry once with the fallback model
-    (spec §10). If still unparseable, raise ExtractionError with whatever we got so the
-    router can still open a review screen."""
+def _extract(
+    content: list[dict],
+    allowed_by_category: dict[str, list[str]],
+    *,
+    system: str = _SYSTEM,
+    models: tuple[str, ...] | None = None,
+) -> ExtractedRecipe:
+    """Call Claude, parse JSON. On parse failure retry once with the next model (spec §10).
+    If still unparseable, raise ExtractionError with whatever we got so the router can still
+    open a review screen."""
+    models = models or (config.ANTHROPIC_MODEL, config.ANTHROPIC_FALLBACK_MODEL)
     tags_block = {"type": "text", "text": _allowed_tags_block(allowed_by_category)}
     body = content + [tags_block]
 
     last_raw = ""
-    for model in (config.ANTHROPIC_MODEL, config.ANTHROPIC_FALLBACK_MODEL):
-        last_raw = _call(body, model=model)
+    for model in models:
+        last_raw = _call(body, model=model, system=system)
         try:
             return parse_extracted_json(last_raw)
         except ValueError:
-            continue  # retry once with the stronger model
+            continue  # retry once
     raise ExtractionError(
         "Claude did not return valid recipe JSON. Opening the review screen so you can finish it.",
         partial={"raw": last_raw[:2000]},
@@ -218,6 +226,63 @@ def extract_place_from_images(
     raise ExtractionError(
         "Claude did not return valid place JSON. Opening the review screen so you can finish it.",
         partial={"raw": last_raw[:2000]},
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Recipe variations (Chunk F, spec §18) — generate a realistic structured variation of a
+# saved recipe. A reasoning task, so it uses a stronger model (Sonnet by default).
+# --------------------------------------------------------------------------- #
+_BUILDER_SYSTEM = """You are a recipe developer. Given a SOURCE recipe (structured JSON) and \
+a transformation request, write a NEW, realistic, coherent recipe that applies the request \
+while preserving what still makes sense from the original. Return ONLY a single JSON object — \
+no prose, no markdown fences — matching this schema exactly:
+
+{
+  "title": string,                     // reflects the variation (e.g. "Patty Melt ...")
+  "description": string | null,        // one short line
+  "servings_base": integer | null,
+  "servings_unit": string | null,
+  "total_time": integer | null,        // minutes
+  "groups": [
+    { "name": string | null,
+      "ingredients": [
+        { "quantity": number | null, "unit": string | null, "name": string,
+          "note": string | null, "scalable": 0 | 1 } ] }
+  ],
+  "steps": [ string ],
+  "equipment": [ { "name": string, "inferred": 0 | 1 } ],
+  "tags": { "Dimension": [ "TagName", ... ] }
+}
+
+Rules:
+- Realistic amounts, techniques, and times; structured ingredients only (split combined amounts).
+- KITCHEN-FRIENDLY quantities: whole counts for count items; common fractions only.
+- Assembly / "to taste" items: quantity=null, scalable=0, keep the phrase in note.
+- Equipment: name required tools; infer the obvious ones and mark them inferred=1.
+- Tags: choose ONLY from the allowed list provided; omit a dimension if nothing fits.
+- Keep servings_base the same as the source unless the request implies a change.
+- Do NOT copy the source author or source — this is a new AI-written variation."""
+
+
+def generate_variation(
+    source: dict, instruction: str, allowed_by_category: dict[str, list[str]]
+) -> ExtractedRecipe:
+    """Generate a structured variation of `source` per `instruction`. Raises FeatureUnavailable
+    without a key, ExtractionError if the model won't return valid JSON after a retry."""
+    _require()
+    text = (
+        "SOURCE RECIPE (structured JSON):\n"
+        + json.dumps(source, ensure_ascii=False)
+        + "\n\nTRANSFORMATION REQUEST:\n"
+        + instruction.strip()
+        + "\n\nReturn the NEW recipe as a single JSON object per the schema."
+    )
+    return _extract(
+        [{"type": "text", "text": text}],
+        allowed_by_category,
+        system=_BUILDER_SYSTEM,
+        models=(config.ANTHROPIC_BUILDER_MODEL, config.ANTHROPIC_BUILDER_MODEL),
     )
 
 

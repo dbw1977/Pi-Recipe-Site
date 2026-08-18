@@ -61,6 +61,9 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 # Default workhorse + fallback for messy/low-confidence extractions (spec §10).
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
 ANTHROPIC_FALLBACK_MODEL = os.environ.get("ANTHROPIC_FALLBACK_MODEL", "claude-sonnet-5").strip()
+# Recipe generation (Chunk F, spec §18) is a reasoning task — use a stronger model than the
+# Haiku extraction default. Sonnet by default; configurable (escalate to Opus if you like).
+ANTHROPIC_BUILDER_MODEL = os.environ.get("ANTHROPIC_BUILDER_MODEL", "claude-sonnet-5").strip()
 
 # whisper.cpp (local voice transcription) — configurable binary + model path (spec §5d).
 WHISPER_BIN = os.environ.get("WHISPER_BIN", "").strip()

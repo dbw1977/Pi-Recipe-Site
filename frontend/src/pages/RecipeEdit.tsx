@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   api,
@@ -216,8 +216,14 @@ export default function RecipeEdit() {
         <Field label="Source URL">
           <input className={inputCls} value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://…" inputMode="url" />
         </Field>
-        <Field label="Hero image path">
-          <input className={inputCls} value={heroImage} onChange={(e) => setHeroImage(e.target.value)} placeholder="relative/media/path.jpg (optional)" />
+        <Field label="Hero image">
+          <div className="flex gap-2">
+            <input className={inputCls} value={heroImage} onChange={(e) => setHeroImage(e.target.value)} placeholder="upload a photo, or a media path" />
+            <PhotoButton onUploaded={setHeroImage} />
+          </div>
+          {heroImage && (
+            <img src={heroImage.startsWith('http') ? heroImage : `/media/${heroImage.replace(/^\/+/, '')}`} alt="" className="mt-2 h-24 w-full rounded-lg object-cover" />
+          )}
         </Field>
         <div className="grid grid-cols-3 gap-3">
           <Field label="Makes">
@@ -453,6 +459,36 @@ export default function RecipeEdit() {
 
 const inputCls =
   'w-full rounded-lg border-0 bg-white px-3 py-2.5 text-[15px] shadow-sm ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-ember/40';
+
+// Device photo upload (Chunk F): camera or library → local store → returns a media path.
+function PhotoButton({ onUploaded }: { onUploaded: (path: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    try {
+      const { path } = await api.uploadPhoto(file);
+      onUploaded(path);
+    } catch (er) {
+      alert((er as Error).message);
+    } finally {
+      setBusy(false);
+      if (ref.current) ref.current.value = '';
+    }
+  };
+
+  return (
+    <>
+      <input ref={ref} type="file" accept="image/*" capture="environment" className="hidden" onChange={pick} />
+      <button onClick={() => ref.current?.click()} disabled={busy} className="btn-ghost shrink-0 !px-3 whitespace-nowrap">
+        {busy ? '…' : '📷 Photo'}
+      </button>
+    </>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

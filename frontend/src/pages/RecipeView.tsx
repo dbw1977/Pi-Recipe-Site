@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, FeaturedResponse, MealPlanCard, Recipe } from '../api';
 import { scaleQuantity } from '../lib/scaling';
 import { dayLabel, rangeLabel, upcomingSaturday } from '../lib/dates';
 import { mediaUrl } from './Library';
+import OverflowMenu from '../components/OverflowMenu';
 
 const FACTORS = [1, 2, 3];
 
@@ -16,12 +17,35 @@ export default function RecipeView() {
   const [notesOpen, setNotesOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [featured, setFeatured] = useState<FeaturedResponse | null>(null);
+  const [aiAvailable, setAiAvailable] = useState(false);
+  const [panel, setPanel] = useState<'plan' | 'variation' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
+
+  const reload = () => api.getRecipe(Number(id)).then(setRecipe).catch((e) => setError(e.message));
 
   useEffect(() => {
     if (!id) return;
-    api.getRecipe(Number(id)).then(setRecipe).catch((e) => setError(e.message));
+    reload();
     api.getFeatured().then(setFeatured).catch(() => setFeatured(null));
+    api.importStatus().then((s) => setAiAvailable(!!s.claude)).catch(() => setAiAvailable(false));
   }, [id]);
+
+  const onPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !recipe) return;
+    setNotice('Uploading photo…');
+    try {
+      const { path } = await api.uploadPhoto(file);
+      await api.setRecipeHero(recipe.id, path);
+      await reload();
+      setNotice('Photo set.');
+    } catch (er) {
+      setNotice((er as Error).message);
+    } finally {
+      if (photoRef.current) photoRef.current.value = '';
+    }
+  };
 
   // The browser's "Save as PDF" uses document.title as the default filename,
   // so name the tab after the recipe while it's open, then restore on leave.
@@ -88,11 +112,44 @@ export default function RecipeView() {
           )}
         </div>
         <div className="p-4">
-          <h1 className="font-display text-2xl font-semibold leading-tight">{recipe.title}</h1>
+          <div className="flex items-start justify-between gap-2">
+            <h1 className="font-display text-2xl font-semibold leading-tight">{recipe.title}</h1>
+            <div className="no-print shrink-0">
+              <OverflowMenu
+                items={[
+                  { label: '✎ Edit', onClick: () => navigate(`/recipe/${recipe.id}/edit`) },
+                  { label: '📅 Add to meal plan', onClick: () => setPanel(panel === 'plan' ? null : 'plan') },
+                  { label: '✨ Create AI variation', onClick: () => setPanel(panel === 'variation' ? null : 'variation'), hidden: !aiAvailable },
+                  { label: '📷 Add / take photo', onClick: () => photoRef.current?.click() },
+                  { label: isPinned ? '★ Unpin from Recipe of the Week' : '☆ Feature as Recipe of the Week', onClick: toggleFeature },
+                  { label: '⤓ Save as PDF', onClick: () => window.print() },
+                  { label: '🗑 Delete', onClick: onDelete, danger: true },
+                ]}
+              />
+            </div>
+          </div>
+          <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
+          {recipe.generated ? (
+            <div className="no-print mt-2 rounded-lg bg-ember/8 px-3 py-2 text-sm text-emberDark ring-1 ring-ember/15">
+              ✨ <strong>AI variation</strong>
+              {recipe.derived_from_title ? (
+                <>
+                  {' '}of{' '}
+                  <Link to={`/recipe/${recipe.derived_from_recipe_id}`} className="underline">
+                    {recipe.derived_from_title}
+                  </Link>
+                </>
+              ) : null}
+              {' '}· untested — review before cooking.
+            </div>
+          ) : null}
+          {notice && <div className="no-print mt-2 text-sm text-herb">{notice}</div>}
           <SourceLine recipe={recipe} />
           {recipe.description && (
             <p className="mt-2 text-[15px] text-bark/80">{recipe.description}</p>
           )}
+          {panel === 'plan' && <div className="mt-3"><AddToPlan recipeId={recipe.id} /></div>}
+          {panel === 'variation' && <AiVariation recipe={recipe} onClose={() => setPanel(null)} />}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted">
             {recipe.servings_base ? (
               <span>
@@ -248,30 +305,80 @@ export default function RecipeView() {
         </section>
       )}
 
-      {/* Actions */}
-      <div className="no-print">
-        <AddToPlan recipeId={recipe.id} />
-        <button onClick={toggleFeature} className="btn-ghost mb-2 w-full">
-          {isPinned ? '★ Unpin from Recipe of the Week' : '☆ Feature as Recipe of the Week'}
-        </button>
-        <button onClick={() => window.print()} className="btn-ghost mb-2 w-full">
-          ⤓ Save as PDF
-        </button>
-        <div className="flex gap-2">
-          <Link to={`/recipe/${recipe.id}/edit`} className="btn-ghost flex-1">
-            Edit
-          </Link>
-          <button onClick={onDelete} className="btn-ghost flex-1 !text-ember">
-            Delete
-          </button>
-        </div>
-      </div>
     </article>
   );
 }
 
+// The AI-variation panel: an instruction box + quick presets. On success the generated
+// draft is opened in the review screen (it's already saved to the Drafts queue).
+const PRESETS: [string, string][] = [
+  ['Vegetarian', 'make a vegetarian version'],
+  ['Spicier', 'make it spicier'],
+  ['Healthier', 'make it healthier / lighter'],
+  ['Kid-friendly', 'make a kid-friendly version'],
+  ['Air fryer', 'convert it for the air fryer'],
+  ['For a crowd', 'scale it up for a crowd'],
+];
+
+function AiVariation({ recipe, onClose }: { recipe: Recipe; onClose: () => void }) {
+  const navigate = useNavigate();
+  const [instruction, setInstruction] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const go = async () => {
+    const text = instruction.trim();
+    if (!text) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await api.createVariation(recipe.id, text);
+      onClose();
+      navigate(`/recipe/${res.draft.id}/edit`, { state: { review: true } });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-xl bg-ember/5 p-3 ring-1 ring-ember/15">
+      <div className="mb-1 text-sm font-semibold text-emberDark">✨ Create an AI variation</div>
+      <p className="mb-2 text-xs text-muted">
+        Describe a change — you'll get an editable draft to review. It's AI-written and untested.
+      </p>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {PRESETS.map(([label, text]) => (
+          <button
+            key={label}
+            onClick={() => setInstruction(text)}
+            className="chip bg-white !py-1 !text-[12px] hover:ring-ember"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <textarea
+        className="w-full rounded-lg border-0 bg-white px-3 py-2 text-[15px] shadow-sm ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-ember/40"
+        rows={2}
+        value={instruction}
+        onChange={(e) => setInstruction(e.target.value)}
+        placeholder="e.g. make me a patty melt version"
+      />
+      {err && <div className="mt-2 rounded-lg bg-ember/10 px-3 py-2 text-sm text-emberDark">{err}</div>}
+      <div className="mt-2 flex gap-2">
+        <button onClick={go} disabled={busy} className="btn-primary flex-1 !py-2 text-sm">
+          {busy ? 'Generating…' : 'Generate variation'}
+        </button>
+        <button onClick={onClose} className="btn-ghost !py-2 text-sm">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function AddToPlan({ recipeId }: { recipeId: number }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [plans, setPlans] = useState<MealPlanCard[]>([]);
   const [planId, setPlanId] = useState<string>('new');
   const [day, setDay] = useState(0);

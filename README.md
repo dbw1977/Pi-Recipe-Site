@@ -321,9 +321,37 @@ The aggregation logic lives in `frontend/src/lib/grocery.ts` with Vitest tests
 (`grocery.test.ts`, incl. the summed-garlic case); the plan/list state is persisted by the
 backend (`/api/meal-plans`). The Chunk E migration adds tables only — nothing existing changes.
 
+## Chunk F — AI variations · UI clean-up · photo upload
+
+Three things in one update (spec §18, §9). The AI part needs `ANTHROPIC_API_KEY`; the UI
+polish and photo upload apply regardless.
+
+- **AI recipe variations.** On any saved recipe, **⋮ → Create AI variation**, type an
+  instruction ("make me a patty melt version") or tap a preset (vegetarian, spicier, air
+  fryer, for a crowd…). It calls **`claude-sonnet-5`** (a reasoning task, unlike Haiku
+  extraction — ~cents per variation), returns a **structured draft** saved to the Drafts
+  queue immediately (never lost, never auto-published), and opens it for review. Generated
+  recipes are marked **AI variation of [source] · untested** and are **never credited to the
+  original human creator**. Iterate by varying a generated draft again. Lineage is stored in
+  new `recipe` columns (`generated`, `derived_from_recipe_id`, `generation_prompt`;
+  `source_type='ai'`) via a non-destructive migration.
+- **UI clean-up.** A persistent header with a **home link** (the 🍲 wordmark returns to the
+  library from anywhere) plus the Cook ⇄ Eat Out toggle. Recipe-view actions collapse into a
+  single **"⋮" overflow menu** (Edit, Add to meal plan, Create AI variation, Add photo, Save
+  as PDF, Feature, Delete) — only the **1x/2x/3x scale toggle stays inline**. The same
+  overflow pattern is applied to the place view.
+- **Device photo upload.** On the recipe editor and the recipe-view ⋮ menu, **Add / take
+  photo** (`accept="image/*"` + `capture="environment"`, so phones offer camera or library —
+  works over plain LAN HTTP). The image is stored locally (originals on the NAS), **EXIF
+  orientation fixed**, **downscaled**, and thumbnailed (Chunk C pipeline), then set as the
+  hero. No schema change (reuses `media` + `hero_image`).
+
+Without a key, the AI action is cleanly disabled and everything else still works. This
+completes the six-chunk build (A–F).
+
 ## Not in these chunks (by design)
 
 - Google Places API autocomplete (v1 uses a pasted Maps link) and public link sharing
   (needs exposing the site — deliberately deferred, spec §12).
-- Pantry inventory + receipt-photo restocking (candidate **Chunk F**), and auto-suggesting
+- Pantry inventory + receipt-photo restocking (candidate **Chunk G**), and auto-suggesting
   *which* recipes to cook — the planner is manual selection.

@@ -51,6 +51,10 @@ class RecipeIn(BaseModel):
     steps: list[StepIn] = Field(default_factory=list)
     equipment: list[EquipmentIn] = Field(default_factory=list)
     tag_ids: list[int] = Field(default_factory=list)
+    # AI-variation lineage (Chunk F). Set at creation; preserved on edit.
+    generated: int = 0
+    derived_from_recipe_id: Optional[int] = None
+    generation_prompt: Optional[str] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -100,6 +104,11 @@ class RecipeOut(BaseModel):
     steps: list[StepOut]
     equipment: list[EquipmentOut]
     tags: list[TagOut]
+    # AI-variation lineage (Chunk F)
+    generated: int = 0
+    derived_from_recipe_id: Optional[int] = None
+    derived_from_title: Optional[str] = None
+    generation_prompt: Optional[str] = None
 
 
 class RecipeCard(BaseModel):
@@ -114,6 +123,7 @@ class RecipeCard(BaseModel):
     total_time: Optional[int]
     status: str
     tags: list[TagOut]
+    generated: int = 0
 
 
 class TagCategoryOut(BaseModel):
