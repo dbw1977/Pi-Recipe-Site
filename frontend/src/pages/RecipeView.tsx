@@ -94,6 +94,14 @@ export default function RecipeView() {
     navigate('/');
   };
 
+  // Middle ground: a generated/imported draft is cookable right here; "Save to library"
+  // publishes it into the grid only when it's a keeper.
+  const saveToLibrary = async () => {
+    await api.approveDraft(recipe.id);
+    await reload();
+    setNotice('Saved to your library.');
+  };
+
   return (
     <article>
       {/* Hero */}
@@ -112,23 +120,7 @@ export default function RecipeView() {
           )}
         </div>
         <div className="p-4">
-          <div className="flex items-start justify-between gap-2">
-            <h1 className="font-display text-2xl font-semibold leading-tight">{recipe.title}</h1>
-            <div className="no-print shrink-0">
-              <OverflowMenu
-                items={[
-                  { label: '✎ Edit', onClick: () => navigate(`/recipe/${recipe.id}/edit`) },
-                  { label: '📅 Add to meal plan', onClick: () => setPanel(panel === 'plan' ? null : 'plan') },
-                  { label: '✨ Create AI variation', onClick: () => setPanel(panel === 'variation' ? null : 'variation'), hidden: !aiAvailable },
-                  { label: '📷 Add / take photo', onClick: () => photoRef.current?.click() },
-                  { label: isPinned ? '★ Unpin from Recipe of the Week' : '☆ Feature as Recipe of the Week', onClick: toggleFeature },
-                  { label: '⤓ Save as PDF', onClick: () => window.print() },
-                  { label: '🗑 Delete', onClick: onDelete, danger: true },
-                ]}
-              />
-            </div>
-          </div>
-          <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
+          <h1 className="font-display text-2xl font-semibold leading-tight">{recipe.title}</h1>
           {recipe.generated ? (
             <div className="no-print mt-2 rounded-lg bg-ember/8 px-3 py-2 text-sm text-emberDark ring-1 ring-ember/15">
               ✨ <strong>AI variation</strong>
@@ -143,13 +135,10 @@ export default function RecipeView() {
               {' '}· untested — review before cooking.
             </div>
           ) : null}
-          {notice && <div className="no-print mt-2 text-sm text-herb">{notice}</div>}
           <SourceLine recipe={recipe} />
           {recipe.description && (
             <p className="mt-2 text-[15px] text-bark/80">{recipe.description}</p>
           )}
-          {panel === 'plan' && <div className="mt-3"><AddToPlan recipeId={recipe.id} /></div>}
-          {panel === 'variation' && <AiVariation recipe={recipe} onClose={() => setPanel(null)} />}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted">
             {recipe.servings_base ? (
               <span>
@@ -170,6 +159,53 @@ export default function RecipeView() {
           )}
         </div>
       </div>
+
+      {/* Draft "middle ground": cook from it here; save to the library only when it's a keeper */}
+      {recipe.status === 'draft' && (
+        <div className="no-print mb-4 rounded-xl bg-herb/10 p-3 ring-1 ring-herb/20">
+          <p className="text-sm text-herb">
+            <strong>{recipe.generated ? 'AI draft' : 'Draft'} — not in your library yet.</strong>{' '}
+            Cook from it right here. Save it when it's a keeper, or discard it.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button onClick={saveToLibrary} className="btn-primary flex-1 !py-2 text-sm">
+              ✓ Save to library
+            </button>
+            <button onClick={onDelete} className="btn-ghost !py-2 text-sm !text-ember">
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Actions — AI variation is promoted to a prominent button; the rest live in a
+          scrollable ⋮ menu rendered OUTSIDE the clipped hero card so every item is reachable. */}
+      <div className="no-print mb-4 flex items-center gap-2">
+        {aiAvailable && (
+          <button
+            onClick={() => setPanel(panel === 'variation' ? null : 'variation')}
+            className="btn-primary flex-1"
+          >
+            ✨ Create AI variation
+          </button>
+        )}
+        <div className="ml-auto">
+          <OverflowMenu
+            items={[
+              { label: '✎ Edit', onClick: () => navigate(`/recipe/${recipe.id}/edit`) },
+              { label: '📅 Add to meal plan', onClick: () => setPanel(panel === 'plan' ? null : 'plan') },
+              { label: '📷 Add / take photo', onClick: () => photoRef.current?.click() },
+              { label: isPinned ? '★ Unpin from Recipe of the Week' : '☆ Feature as Recipe of the Week', onClick: toggleFeature },
+              { label: '⤓ Save as PDF', onClick: () => window.print() },
+              { label: '🗑 Delete', onClick: onDelete, danger: true },
+            ]}
+          />
+        </div>
+      </div>
+      <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
+      {notice && <div className="no-print mb-3 text-sm text-herb">{notice}</div>}
+      {panel === 'plan' && <div className="no-print mb-4"><AddToPlan recipeId={recipe.id} /></div>}
+      {panel === 'variation' && <div className="no-print mb-4"><AiVariation recipe={recipe} onClose={() => setPanel(null)} /></div>}
 
       {/* Scale toggle — sticky so it's reachable while scrolling ingredients */}
       <div className="no-print sticky top-[60px] z-[5] mb-4">
@@ -334,7 +370,8 @@ function AiVariation({ recipe, onClose }: { recipe: Recipe; onClose: () => void 
     try {
       const res = await api.createVariation(recipe.id, text);
       onClose();
-      navigate(`/recipe/${res.draft.id}/edit`, { state: { review: true } });
+      // Land in the cook view (a draft): cook from it now, save to library if it's a keeper.
+      navigate(`/recipe/${res.draft.id}`);
     } catch (e) {
       setErr((e as Error).message);
     } finally {

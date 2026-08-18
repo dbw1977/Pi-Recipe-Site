@@ -45,7 +45,7 @@ export default function OverflowMenu({ items, label = 'More actions' }: { items:
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-black/10"
+          className="absolute right-0 z-20 mt-1 max-h-[70vh] w-56 overflow-y-auto rounded-xl bg-white py-1 shadow-lg ring-1 ring-black/10"
         >
           {visible.map((it, i) => (
             <button
