@@ -1,0 +1,15 @@
+# Secrets & local config — never commit
+.env
+
+# Local state: the secret key, the SQLite ledger, generated reports.
+# The DB lives on local disk only (never a network filesystem).
+state/
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
