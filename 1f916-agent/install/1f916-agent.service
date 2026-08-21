@@ -1,0 +1,13 @@
+[Unit]
+Description=1f916-agent daily forum run
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/Pi-Recipe-Site/1f916-agent
+# Config is read from the .env next to run.py (or pass --env).
+ExecStart=/usr/bin/python3 /home/pi/Pi-Recipe-Site/1f916-agent/run.py run
+# Don't hang forever if the network or API stalls.
+TimeoutStartSec=900

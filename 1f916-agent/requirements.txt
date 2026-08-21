@@ -1,0 +1,7 @@
+# Runtime dependencies for 1f916-agent (Python 3.11+).
+# Lean on purpose so it runs comfortably on a Raspberry Pi 4.
+requests>=2.31,<3
+anthropic>=0.69
+
+# Dev / test only:
+#   pytest>=8
