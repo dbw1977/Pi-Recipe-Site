@@ -27,18 +27,27 @@ SCOPES = [
 ]
 
 
+def client_configured() -> bool:
+    """OAuth client secrets present — enough to connect a Google account (import or backup)."""
+    return bool(config.GOOGLE_CLIENT_SECRETS)
+
+
 def available() -> bool:
-    """Configured enough to attempt Drive (client secrets + a target folder)."""
+    """Configured enough to attempt Drive IMPORT (client secrets + a target folder)."""
     return bool(config.GOOGLE_CLIENT_SECRETS and config.DRIVE_FOLDER_ID)
 
 
-def _require_configured() -> None:
+def _require_client_secrets() -> None:
     if not config.GOOGLE_CLIENT_SECRETS:
         raise FeatureUnavailable(
-            "Google Drive import needs OAuth client secrets. Set GOOGLE_CLIENT_SECRETS to "
-            "the path of your downloaded client_secret.json.",
+            "Connecting Google needs OAuth client secrets. Set GOOGLE_CLIENT_SECRETS to the "
+            "path of your downloaded client_secret.json (a Desktop-app OAuth client).",
             needs="GOOGLE_CLIENT_SECRETS",
         )
+
+
+def _require_configured() -> None:
+    _require_client_secrets()
     if not config.DRIVE_FOLDER_ID:
         raise FeatureUnavailable(
             "Set DRIVE_FOLDER_ID to the id of your Drive 'Recipes' folder.",
@@ -96,18 +105,27 @@ def _make_flow(redirect_uri: str):
 
 
 def auth_url(redirect_uri: str) -> str:
-    _require_configured()
+    _require_client_secrets()  # connecting only needs the client; folder is for scanning
     flow = _make_flow(redirect_uri)
     url, _ = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="true")
     return url
 
 
 def finish_auth(code: str, redirect_uri: str) -> None:
-    _require_configured()
+    _require_client_secrets()
     flow = _make_flow(redirect_uri)
     flow.fetch_token(code=code)
     _token_path().parent.mkdir(parents=True, exist_ok=True)
     _token_path().write_text(flow.credentials.to_json())
+
+
+def disconnect() -> bool:
+    """Remove the stored Google token (revokes the app's local access)."""
+    p = _token_path()
+    if p.exists():
+        p.unlink()
+        return True
+    return False
 
 
 # --------------------------------------------------------------------------- #

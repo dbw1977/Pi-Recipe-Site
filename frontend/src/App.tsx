@@ -63,11 +63,9 @@ export default function App() {
                   </span>
                 </Link>
               )}
-              <Link to={`${base}import`} className="btn-ghost !px-3 !py-2">
-                Import
-              </Link>
-              <Link to={`${base}new`} className="btn-primary !px-3 !py-2">
-                + New
+              {/* One entry point: "New" leads to the hub where you type it in by hand OR import. */}
+              <Link to={`${base}import`} className="btn-primary !px-3 !py-2">
+                + New {eat ? 'place' : 'recipe'}
               </Link>
             </div>
           </div>

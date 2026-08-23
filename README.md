@@ -178,11 +178,14 @@ bash ./models/download-ggml-model.sh base.en
 Then set `WHISPER_BIN=.../build/bin/whisper-cli` and `WHISPER_MODEL=.../models/ggml-base.en.bin`.
 (ffmpeg is used to convert audio to 16 kHz if it's installed: `sudo apt install ffmpeg`.)
 
-**Set up Google Drive** (bulk loader): create OAuth **Desktop app** credentials in Google
-Cloud, download `client_secret.json`, set `GOOGLE_CLIENT_SECRETS` + `DRIVE_FOLDER_ID`, then
-click **Connect Google Drive** in the app (Import page) once to authorize. The OAuth redirect
-URI to register is `http://<host>/api/imports/drive/callback`. The scan reads **only** that
-folder and skips files it already imported.
+**Set up Google** (Drive import **and** the weekly Drive backup — one connection covers both):
+create an OAuth **Desktop app** client in Google Cloud (Google rejects `http://recipes.local`
+redirects, so the app uses a copy-paste code flow with a `localhost` redirect), download its
+`client_secret.json`, set `GOOGLE_CLIENT_SECRETS` (+ `DRIVE_FOLDER_ID` for import,
+`DRIVE_BACKUP_FOLDER_ID` for backup), restart, then **Settings → Google account → Connect
+Google** in the app: approve in the popup, and paste back the code (or the whole `localhost`
+URL) from your browser's address bar. The import scan reads **only** the recipes folder and
+skips files it already imported.
 
 **Testing Chunk B:** URL — paste the Plays Well With Butter marinade; Screenshot — the
 steak-salad Instagram image (spec §13); the Drafts queue supports per-row Approve / Edit /

@@ -109,6 +109,15 @@ export interface PlaceImportResponse {
   warning?: string;
 }
 
+export interface GoogleStatus {
+  configured: boolean;
+  authorized: boolean;
+  drive_import_folder: boolean;
+  drive_backup_folder: boolean;
+  drive_import_ready: boolean;
+  drive_backup_ready: boolean;
+}
+
 export interface DriveScanSummary {
   created: { name: string; recipe_id: number }[];
   skipped: { name: string; reason: string }[];
@@ -377,8 +386,19 @@ export const api = {
   driveScan(): Promise<DriveScanSummary> {
     return req<DriveScanSummary>('/api/imports/drive/scan', { method: 'POST' });
   },
-  driveAuthUrl(): Promise<{ url: string; redirect_uri: string }> {
-    return req<{ url: string; redirect_uri: string }>('/api/imports/drive/auth-url');
+
+  // --- Google account (OAuth; powers Drive import + Drive backup) ---
+  googleStatus(): Promise<GoogleStatus> {
+    return req<GoogleStatus>('/api/google/status');
+  },
+  googleAuthUrl(): Promise<{ url: string; redirect_uri: string }> {
+    return req<{ url: string; redirect_uri: string }>('/api/google/auth-url');
+  },
+  googleConnect(code: string): Promise<{ authorized: boolean }> {
+    return req('/api/google/connect', { method: 'POST', body: JSON.stringify({ code }) });
+  },
+  googleDisconnect(): Promise<{ authorized: boolean }> {
+    return req('/api/google/disconnect', { method: 'POST' });
   },
 
   // --- Places (Chunk D) ---

@@ -38,17 +38,26 @@ export default function PlaceImport() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold">Import a place</h1>
-        <Link to="/eat/new" className="btn-ghost !py-2">
-          ✎ By hand
-        </Link>
-      </div>
+      <h1 className="font-display text-2xl font-semibold">New place</h1>
       <p className="text-sm text-muted">
-        Screenshot a friend's text or an Instagram post about a spot — Claude pulls out the name,
-        city, and the dishes they raved about. It lands as a <strong>draft</strong> for you to
+        Add a spot by hand, or screenshot a friend's text / an Instagram post and let Claude pull
+        out the name, city, and dishes. Anything you bring in lands as a <strong>draft</strong> to
         review; nothing publishes automatically.
       </p>
+
+      {/* Primary: enter it by hand */}
+      <Link
+        to="/eat/new"
+        className="card flex items-center justify-between p-4 ring-1 ring-ember/15 hover:ring-ember/40"
+      >
+        <span>
+          <span className="text-lg font-semibold">✎ Enter it by hand</span>
+          <span className="mt-0.5 block text-sm text-muted">Name, city, dishes, a Maps link.</span>
+        </span>
+        <span className="text-ember">→</span>
+      </Link>
+
+      <div className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted">or from a screenshot</div>
 
       <section className={`card p-4 ${disabled ? 'opacity-70' : ''}`}>
         <h2 className="text-lg font-semibold">From a screenshot</h2>

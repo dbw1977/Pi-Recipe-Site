@@ -5,8 +5,7 @@ crashes and nothing auto-publishes (CLAUDE.md rules 8 & 10).
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from .. import crud, crud_places
@@ -209,22 +208,6 @@ def drive_scan_endpoint():
     return summary
 
 
-@router.get("/drive/auth-url")
-def drive_auth_url_endpoint(request: Request):
-    redirect_uri = str(request.url_for("drive_callback"))
-    try:
-        return {"url": drive.auth_url(redirect_uri), "redirect_uri": redirect_uri}
-    except FeatureUnavailable as e:
-        raise HTTPException(status_code=503, detail=e.message)
-
-
-@router.get("/drive/callback", name="drive_callback")
-def drive_callback(request: Request, code: str | None = None, error: str | None = None):
-    if error or not code:
-        return RedirectResponse("/import?drive=error")
-    redirect_uri = str(request.url_for("drive_callback"))
-    try:
-        drive.finish_auth(code, redirect_uri)
-    except FeatureUnavailable as e:
-        raise HTTPException(status_code=503, detail=e.message)
-    return RedirectResponse("/import?drive=connected")
+# Connecting a Google account moved to /api/google/* (copy-paste code flow that works on a
+# headless LAN device). The old web-redirect endpoints were removed because Google rejects
+# non-https / non-localhost redirects like http://recipes.local.

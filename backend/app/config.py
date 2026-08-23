@@ -75,7 +75,11 @@ FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "ffmpeg").strip()
 VIDEO_FRAME_COUNT = int(os.environ.get("VIDEO_FRAME_COUNT", "9"))
 
 # Google Drive import (spec §5c) — OAuth client secret + stored token + target folder.
+# The Pi is a headless LAN device and Google rejects http://recipes.local redirects (only
+# https or http://localhost are allowed), so we use the copy-paste code flow with a
+# Desktop-type OAuth client and a localhost redirect. One consent covers import + backup.
 GOOGLE_CLIENT_SECRETS = os.environ.get("GOOGLE_CLIENT_SECRETS", "").strip()
+GOOGLE_OAUTH_REDIRECT = os.environ.get("GOOGLE_OAUTH_REDIRECT", "http://localhost").strip()
 GOOGLE_TOKEN_PATH = os.environ.get(
     "GOOGLE_TOKEN_PATH", str(_REPO_ROOT / "backend" / "data" / "google_token.json")
 ).strip()

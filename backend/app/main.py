@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, thumbnails
 from .migrations_runner import run_migrations
-from .routers import backups, drafts, featured, imports, meals, media, places, recipes, tags
+from .routers import backups, drafts, featured, google, imports, meals, media, places, recipes, tags
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(places.router)
     app.include_router(meals.router)
     app.include_router(media.router)
+    app.include_router(google.router)
     app.include_router(tags.router)
     app.include_router(imports.router)
     app.include_router(drafts.router)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, DriveScanSummary, ImportResponse, ImportStatus } from '../api';
+import { api, DriveScanSummary, GoogleStatus, ImportResponse, ImportStatus } from '../api';
 
 export default function Import() {
   const [status, setStatus] = useState<ImportStatus | null>(null);
@@ -20,21 +20,31 @@ export default function Import() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-semibold">Import a recipe</h1>
-        <Link to="/new" className="btn-ghost !py-2">
-          ✎ By hand
-        </Link>
-      </div>
+      <h1 className="font-display text-2xl font-semibold">New recipe</h1>
       <p className="text-sm text-muted">
-        Every import lands as a <strong>draft</strong> for you to review before it joins the
-        library — nothing publishes automatically.
+        Type it in by hand, or bring one in from a link, a photo/video, a voice note, or Google
+        Drive. Anything you bring in lands as a <strong>draft</strong> to review — nothing
+        publishes automatically.
       </p>
+
+      {/* Primary: enter it by hand */}
+      <Link
+        to="/new"
+        className="card flex items-center justify-between p-4 ring-1 ring-ember/15 hover:ring-ember/40"
+      >
+        <span>
+          <span className="text-lg font-semibold">✎ Enter it by hand</span>
+          <span className="mt-0.5 block text-sm text-muted">Full control — type the ingredients and steps.</span>
+        </span>
+        <span className="text-ember">→</span>
+      </Link>
+
+      <div className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted">or bring one in</div>
 
       <UrlCard onImported={onImported} />
       <ScreenshotCard status={status} onImported={onImported} />
       <VoiceCard status={status} onImported={onImported} />
-      <DriveCard status={status} />
+      <DriveCard />
     </div>
   );
 }
@@ -289,20 +299,15 @@ function VoiceCard({
 }
 
 // --- Drive ------------------------------------------------------------------
-function DriveCard({ status }: { status: ImportStatus | null }) {
+function DriveCard() {
+  const [gs, setGs] = useState<GoogleStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [summary, setSummary] = useState<DriveScanSummary | null>(null);
 
-  const connect = async () => {
-    setErr(null);
-    try {
-      const { url } = await api.driveAuthUrl();
-      window.location.href = url;
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  };
+  useEffect(() => {
+    api.googleStatus().then(setGs).catch(() => setGs(null));
+  }, []);
 
   const scan = async () => {
     setBusy(true);
@@ -321,13 +326,17 @@ function DriveCard({ status }: { status: ImportStatus | null }) {
     <Card
       title="From Google Drive"
       subtitle="Scan a Drive folder of saved recipes (bulk load)."
-      disabled={!!status && !status.drive_configured}
-      disabledHint="Needs Google OAuth (GOOGLE_CLIENT_SECRETS) and DRIVE_FOLDER_ID in your .env."
+      disabled={!!gs && !gs.configured}
+      disabledHint="Needs a Google Desktop-app OAuth client (GOOGLE_CLIENT_SECRETS) + DRIVE_FOLDER_ID in your .env."
     >
-      {status && !status.drive_authorized ? (
-        <button onClick={connect} className="btn-primary w-full">
-          Connect Google Drive
-        </button>
+      {gs && !gs.authorized ? (
+        <Link to="/settings" className="btn-primary block w-full text-center">
+          Connect your Google account in Settings →
+        </Link>
+      ) : gs && !gs.drive_import_folder ? (
+        <div className="rounded-lg bg-cream px-3 py-2 text-sm text-muted">
+          Connected — set <code>DRIVE_FOLDER_ID</code> in your .env to your Recipes folder, then restart.
+        </div>
       ) : (
         <button onClick={scan} disabled={busy} className="btn-primary w-full">
           {busy ? 'Scanning…' : '🔍 Scan Drive folder'}
