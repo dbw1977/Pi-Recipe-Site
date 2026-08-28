@@ -81,14 +81,48 @@ def _allowed_tags_block(allowed_by_category: dict[str, list[str]]) -> str:
     return "Allowed tags (choose only from these):\n" + "\n".join(lines)
 
 
+def _translate_api_error(e: Exception) -> Exception:
+    """Turn an Anthropic API error into a clean FeatureUnavailable (rule 8) so imports return
+    a helpful 503 instead of a raw 500. Non-Anthropic errors pass through unchanged."""
+    try:
+        import anthropic
+    except ImportError:
+        return e
+    if isinstance(e, anthropic.AuthenticationError):
+        return FeatureUnavailable(
+            "Your Anthropic API key was rejected (invalid or revoked). Update ANTHROPIC_API_KEY "
+            "in your .env on the Pi and restart. (Ordinary recipe-site links still work without it.)",
+            needs="ANTHROPIC_API_KEY",
+        )
+    if isinstance(e, anthropic.PermissionDeniedError):
+        return FeatureUnavailable(
+            "Anthropic denied the request — the key may lack access or the account has no credit. "
+            "Check the Anthropic console (billing + the key), then try again.",
+            needs="ANTHROPIC_API_KEY",
+        )
+    if isinstance(e, anthropic.RateLimitError):
+        return FeatureUnavailable("Anthropic is rate-limiting right now — wait a moment and try again.")
+    if isinstance(e, anthropic.APIConnectionError):
+        return FeatureUnavailable("Couldn't reach the Anthropic API — check the Pi's internet, then try again.")
+    if isinstance(e, anthropic.APIStatusError):
+        return FeatureUnavailable(
+            f"Anthropic returned an error (HTTP {getattr(e, 'status_code', '?')}). "
+            "Check your key and credit balance, then try again."
+        )
+    return e
+
+
 def _call(content: list[dict], *, model: str, system: str = _SYSTEM) -> str:
     client = _client()
-    msg = client.messages.create(
-        model=model,
-        max_tokens=2048,
-        system=system,
-        messages=[{"role": "user", "content": content}],
-    )
+    try:
+        msg = client.messages.create(
+            model=model,
+            max_tokens=2048,
+            system=system,
+            messages=[{"role": "user", "content": content}],
+        )
+    except Exception as e:
+        raise _translate_api_error(e) from e
     # Concatenate any text blocks in the response.
     return "".join(getattr(b, "text", "") for b in msg.content).strip()
 
