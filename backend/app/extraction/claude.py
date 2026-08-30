@@ -193,9 +193,12 @@ def extract_from_images(
     )
     if transcript and transcript.strip():
         text += (
-            "\n\nThe video's spoken narration (auto-transcribed) is below. Treat it as the "
-            "primary source for ingredients, amounts, and the order of steps, and use the frames "
-            "to confirm and fill gaps. Ignore intro/outro chatter and calls to subscribe.\n\n"
+            "\n\nThe video's audio was auto-transcribed below. IF it is spoken cooking narration, "
+            "treat it as the primary source for ingredients, amounts, and the order of steps, and "
+            "use the frames to confirm and fill gaps. BUT many short videos (e.g. Instagram reels) "
+            "just have background MUSIC — if the transcript looks like song lyrics or is unrelated "
+            "to the recipe, IGNORE it entirely and rely on the frames' on-screen text. Also ignore "
+            "intro/outro chatter and 'like and subscribe' calls.\n\n"
             "TRANSCRIPT:\n" + transcript.strip()[:12000]
         )
     content.append({"type": "text", "text": text})
