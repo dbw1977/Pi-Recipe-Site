@@ -64,6 +64,50 @@ def test_video_import_samples_frames_and_sets_hero(client: TestClient, monkeypat
     assert {t["name"] for t in draft["tags"]} >= {"Chicken"}
 
 
+def test_video_uses_narration_transcript_when_whisper_is_set(client: TestClient, monkeypatch):
+    from app.extraction import voice
+    monkeypatch.setattr(claude, "available", lambda: True)
+    monkeypatch.setattr(video, "frames_available", lambda: True)
+    monkeypatch.setattr(video, "extract_frames", lambda *a, **k: [b"f1", b"f2"])
+    # Pretend whisper is configured and hears the recipe spoken.
+    monkeypatch.setattr(voice, "transcription_available", lambda: True)
+    monkeypatch.setattr(voice, "transcribe", lambda *a, **k: "Add two cloves of garlic and simmer.")
+
+    seen = {}
+
+    def fake_images(images, allowed, **k):
+        seen["transcript"] = k.get("transcript")
+        return _fake_extracted()
+
+    monkeypatch.setattr(claude, "extract_from_images", fake_images)
+    r = client.post("/api/imports/screenshot", files={"file": ("clip.mp4", b"\x00\x00", "video/mp4")})
+    assert r.status_code == 200, r.text
+    # The spoken narration was passed to the vision call alongside the frames.
+    assert seen["transcript"] and "garlic" in seen["transcript"]
+
+
+def test_video_falls_back_to_frames_when_transcription_fails(client: TestClient, monkeypatch):
+    from app.extraction import voice
+    monkeypatch.setattr(claude, "available", lambda: True)
+    monkeypatch.setattr(video, "frames_available", lambda: True)
+    monkeypatch.setattr(video, "extract_frames", lambda *a, **k: [b"f1"])
+    monkeypatch.setattr(voice, "transcription_available", lambda: True)
+    def boom(*a, **k):
+        raise RuntimeError("whisper crashed")
+    monkeypatch.setattr(voice, "transcribe", boom)
+
+    seen = {}
+
+    def fake_images(images, allowed, **k):
+        seen["transcript"] = k.get("transcript")
+        return _fake_extracted()
+
+    monkeypatch.setattr(claude, "extract_from_images", fake_images)
+    r = client.post("/api/imports/screenshot", files={"file": ("clip.mp4", b"\x00\x00", "video/mp4")})
+    assert r.status_code == 200, r.text  # import still succeeds, frames-only
+    assert seen["transcript"] is None
+
+
 def test_video_cover_photo_overrides_frame_hero(client: TestClient, monkeypatch):
     monkeypatch.setattr(claude, "available", lambda: True)
     monkeypatch.setattr(video, "frames_available", lambda: True)

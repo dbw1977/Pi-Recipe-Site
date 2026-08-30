@@ -207,7 +207,9 @@ function ScreenshotCard({
         </p>
       )}
       <p className="mt-2 text-xs text-muted">
-        A video takes a little longer — the Pi samples frames from it, then Claude reads them.
+        A video takes a little longer — the Pi samples frames <em>and</em>, if whisper.cpp is set
+        up, transcribes the narration, so Claude both watches and listens. Best on cooking videos
+        that show or say the recipe.
       </p>
       <ErrorLine msg={err} />
     </Card>

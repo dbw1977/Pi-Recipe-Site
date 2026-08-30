@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 from .. import config
-from . import claude, media
+from . import claude, media, voice
 from .draft import to_recipe_input
 from .errors import FeatureUnavailable
 from .tags import load_tag_index
@@ -113,8 +113,21 @@ def import_video(
         raise FeatureUnavailable(
             "That video produced no readable frames. Try a screenshot of the recipe instead."
         )
+
+    # "Listen" as well as "watch": if whisper.cpp is set up, transcribe the narration and hand
+    # it to Claude alongside the frames. Best-effort — a silent clip or a whisper hiccup just
+    # falls back to frames-only (never fails the import).
+    transcript = None
+    if voice.transcription_available():
+        try:
+            transcript = voice.transcribe(video_bytes, content_type) or None
+        except Exception:
+            transcript = None
+
     extracted = claude.extract_from_images(
-        [(f, "image/jpeg") for f in frames], tag_index.allowed_by_category
+        [(f, "image/jpeg") for f in frames],
+        tag_index.allowed_by_category,
+        transcript=transcript,
     )
 
     # Keep the original video in the media store.

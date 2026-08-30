@@ -173,28 +173,32 @@ def extract_from_images(
     allowed_by_category: dict[str, list[str]],
     *,
     instruction: str | None = None,
+    transcript: str | None = None,
 ) -> ExtractedRecipe:
     """Extract one recipe from several images at once — multiple screenshots of the same
-    recipe, or frames sampled from a video. `images` is a list of (bytes, media_type)."""
+    recipe, or frames sampled from a video. `images` is a list of (bytes, media_type).
+    `transcript` (optional) is the video's spoken narration — the frames show it, the
+    transcript tells it, so together Claude captures amounts and steps far more completely."""
     content: list[dict] = []
     for img, media_type in images:
         b64 = base64.standard_b64encode(img).decode("ascii")
         content.append(
             {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}}
         )
-    content.append(
-        {
-            "type": "text",
-            "text": instruction
-            or (
-                "These images are frames sampled in order from a short recipe video. Read any "
-                "on-screen text, captions, and ingredient overlays, and look at the dish, to "
-                "extract the recipe as JSON per the schema. If the video doesn't spell out the "
-                "steps, write concise steps from what the frames show. Combine information "
-                "across all the frames into one recipe."
-            ),
-        }
+    text = instruction or (
+        "These images are frames sampled in order from a short recipe video. Read any on-screen "
+        "text, captions, and ingredient overlays, and look at the dish, to extract the recipe as "
+        "JSON per the schema. If the video doesn't spell out the steps, write concise steps from "
+        "what the frames show. Combine information across all the frames into one recipe."
     )
+    if transcript and transcript.strip():
+        text += (
+            "\n\nThe video's spoken narration (auto-transcribed) is below. Treat it as the "
+            "primary source for ingredients, amounts, and the order of steps, and use the frames "
+            "to confirm and fill gaps. Ignore intro/outro chatter and calls to subscribe.\n\n"
+            "TRANSCRIPT:\n" + transcript.strip()[:12000]
+        )
+    content.append({"type": "text", "text": text})
     return _extract(content, allowed_by_category)
 
 
