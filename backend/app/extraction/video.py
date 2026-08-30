@@ -124,10 +124,13 @@ def import_video(
         except Exception:
             transcript = None
 
+    # Video is the richest extraction task, so it runs on the stronger model by default
+    # (config.ANTHROPIC_VIDEO_MODEL), falling back to the standard fallback on a parse miss.
     extracted = claude.extract_from_images(
         [(f, "image/jpeg") for f in frames],
         tag_index.allowed_by_category,
         transcript=transcript,
+        models=(config.ANTHROPIC_VIDEO_MODEL, config.ANTHROPIC_FALLBACK_MODEL),
     )
 
     # Keep the original video in the media store.

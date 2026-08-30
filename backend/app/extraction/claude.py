@@ -174,6 +174,7 @@ def extract_from_images(
     *,
     instruction: str | None = None,
     transcript: str | None = None,
+    models: tuple[str, ...] | None = None,
 ) -> ExtractedRecipe:
     """Extract one recipe from several images at once — multiple screenshots of the same
     recipe, or frames sampled from a video. `images` is a list of (bytes, media_type).
@@ -202,7 +203,7 @@ def extract_from_images(
             "TRANSCRIPT:\n" + transcript.strip()[:12000]
         )
     content.append({"type": "text", "text": text})
-    return _extract(content, allowed_by_category)
+    return _extract(content, allowed_by_category, models=models)
 
 
 def structure_text(

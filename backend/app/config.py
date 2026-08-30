@@ -64,6 +64,10 @@ ANTHROPIC_FALLBACK_MODEL = os.environ.get("ANTHROPIC_FALLBACK_MODEL", "claude-so
 # Recipe generation (Chunk F, spec §18) is a reasoning task — use a stronger model than the
 # Haiku extraction default. Sonnet by default; configurable (escalate to Opus if you like).
 ANTHROPIC_BUILDER_MODEL = os.environ.get("ANTHROPIC_BUILDER_MODEL", "claude-sonnet-5").strip()
+# Video import combines many frames + a narration transcript into one recipe — a richer,
+# multimodal task than a single screenshot, so it defaults to the stronger model. Set this
+# to the Haiku id to make video imports cheaper/faster at some cost to quality.
+ANTHROPIC_VIDEO_MODEL = os.environ.get("ANTHROPIC_VIDEO_MODEL", "claude-sonnet-5").strip()
 
 # whisper.cpp (local voice transcription) — configurable binary + model path (spec §5d).
 WHISPER_BIN = os.environ.get("WHISPER_BIN", "").strip()
