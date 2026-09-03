@@ -299,12 +299,22 @@ def _fetch_readable_text(url: str) -> str:
 
     try:
         resp = requests.get(url, timeout=25, headers=_BROWSER_HEADERS)
-        resp.raise_for_status()
     except Exception as e:
         raise FeatureUnavailable(
-            "Couldn't read that page — the site may be blocking automated requests, or it's "
-            "down. Try a screenshot of the recipe instead, or add it by hand."
+            "Couldn't reach that page — check the link and the Pi's internet, or add it by hand."
         ) from e
+    # A 403/401/429 here means bot protection (Food & Wine, Allrecipes, etc.) refused us — no
+    # header trick beats that from a script, so point straight at the screenshot import.
+    if resp.status_code in (401, 403, 429):
+        raise FeatureUnavailable(
+            "This site blocks automated imports — it only serves a real browser. Open it on your "
+            "phone, screenshot the recipe, and use “From a screenshot” instead (that always works)."
+        )
+    if resp.status_code >= 400:
+        raise FeatureUnavailable(
+            f"Couldn't read that page (HTTP {resp.status_code}). Try a screenshot of the recipe "
+            "instead, or add it by hand."
+        )
     return _readable_from_html(resp.text)
 
 

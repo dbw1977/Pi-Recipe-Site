@@ -29,6 +29,19 @@ def test_fetch_readable_text_failure_is_feature_unavailable(monkeypatch):
         url_import._fetch_readable_text("https://www.foodandwine.com/x")
 
 
+class _Resp:
+    def __init__(self, status_code, text=""):
+        self.status_code = status_code
+        self.text = text
+
+
+def test_403_points_user_to_screenshot(monkeypatch):
+    monkeypatch.setattr("requests.get", lambda *a, **k: _Resp(403))
+    with pytest.raises(FeatureUnavailable) as ei:
+        url_import._fetch_readable_text("https://www.foodandwine.com/x")
+    assert "screenshot" in ei.value.message.lower()
+
+
 def test_scraper_without_ingredients_falls_back_to_claude(client: TestClient, monkeypatch):
     # Simulate an article page recipe-scrapers half-parses: a title but zero ingredients.
     monkeypatch.setattr(claude, "available", lambda: True)
