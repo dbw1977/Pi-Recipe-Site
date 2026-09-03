@@ -239,7 +239,10 @@ def import_url(conn: sqlite3.Connection, url: str) -> ImportResult:
     tag_index = load_tag_index(conn)
     scraped = _try_scraper(url)
 
-    if scraped:
+    # Use the scraper's result when it actually found ingredients — or when there's no AI key
+    # to do better. If it returned a page but NO ingredients (common on article-style pages
+    # the plugin half-parses), fall through to the richer JSON-LD + Claude path below.
+    if scraped and (scraped.get("ingredients") or not claude.available()):
         hero = media.download_image(scraped.get("image"))
         if claude.available():
             extracted = claude.structure_text(
@@ -253,7 +256,8 @@ def import_url(conn: sqlite3.Connection, url: str) -> ImportResult:
         )
         return ImportResult(recipe=recipe)
 
-    # Scraper couldn't handle the site → Claude fallback on the readable page text.
+    # Scraper couldn't handle the site (or found no ingredients) → Claude fallback, fed the
+    # page's schema.org JSON-LD recipe data when present (far better than raw page text).
     if not claude.available():
         raise FeatureUnavailable(
             "This site isn't supported by the offline scraper, and no Anthropic key is set "
@@ -261,21 +265,46 @@ def import_url(conn: sqlite3.Connection, url: str) -> ImportResult:
             needs="ANTHROPIC_API_KEY",
         )
     text = _fetch_readable_text(url)
-    extracted = claude.structure_text(text, tag_index.allowed_by_category, kind="page text")
+    extracted = claude.structure_text(text, tag_index.allowed_by_category, kind="recipe web page")
+    extracted.source_name = extracted.source_name or (scraped or {}).get("host")
+    hero = media.download_image((scraped or {}).get("image"))
     recipe = to_recipe_input(
-        extracted, source_type="url", tag_index=tag_index, source_url=url, hero_image=None
+        extracted, source_type="url", tag_index=tag_index, source_url=url, hero_image=hero
     )
     return ImportResult(recipe=recipe)
 
 
 def _fetch_readable_text(url: str) -> str:
+    """Fetch a page and return recipe-focused text for Claude: any schema.org JSON-LD recipe
+    blocks first (most modern sites embed the full recipe there), then the stripped page text.
+    A blocked/failed fetch becomes a clean FeatureUnavailable, never an unhandled 500."""
     import requests
 
-    resp = requests.get(url, timeout=25, headers={"User-Agent": _BROWSER_UA})
-    resp.raise_for_status()
-    html = resp.text
-    # Crude tag strip — Claude tolerates messy text; we just remove scripts/styles/markup.
-    html = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
-    text = re.sub(r"<[^>]+>", " ", html)
-    text = re.sub(r"\s+", " ", text)
-    return text[:16000]
+    try:
+        resp = requests.get(url, timeout=25, headers={"User-Agent": _BROWSER_UA})
+        resp.raise_for_status()
+    except Exception as e:
+        raise FeatureUnavailable(
+            "Couldn't read that page — the site may be blocking automated requests, or it's "
+            "down. Try a screenshot of the recipe instead, or add it by hand."
+        ) from e
+    return _readable_from_html(resp.text)
+
+
+def _readable_from_html(html: str) -> str:
+    # 1) schema.org JSON-LD recipe blocks — the structured gold most sites embed.
+    blocks = re.findall(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        html, flags=re.S | re.I,
+    )
+    jsonld = "\n\n".join(b.strip() for b in blocks if "recipe" in b.lower())[:12000]
+
+    # 2) The visible page text, scripts/styles stripped, as a backstop.
+    stripped = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", stripped))[:12000]
+
+    parts = []
+    if jsonld:
+        parts.append("STRUCTURED RECIPE DATA (schema.org JSON-LD):\n" + jsonld)
+    parts.append("PAGE TEXT:\n" + text)
+    return "\n\n".join(parts)
