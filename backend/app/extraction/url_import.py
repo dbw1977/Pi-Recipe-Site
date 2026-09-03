@@ -34,9 +34,26 @@ class ImportResult:
 # which otherwise looks like "site not supported". We fetch the HTML ourselves with
 # this UA, then hand it to scrape_html.
 _BROWSER_UA = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
 )
+
+# A User-Agent alone isn't enough for bot-protected sites (Dotdash Meredith — Food & Wine,
+# Allrecipes, Serious Eats — and Cloudflare-fronted sites) which 403 requests that don't look
+# like a real browser navigation. Send the headers Chrome sends. (Accept-Encoding is limited to
+# gzip/deflate — br needs a brotli decoder requests may not have, which would garble the body.)
+_BROWSER_HEADERS = {
+    "User-Agent": _BROWSER_UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
 
 
 def _try_scraper(url: str) -> dict | None:
@@ -45,9 +62,9 @@ def _try_scraper(url: str) -> dict | None:
         from recipe_scrapers import scrape_html
     except ImportError:
         return None
-    # Fetch with a browser UA so sites that block bots still return their HTML.
+    # Fetch with full browser headers so sites that block bots still return their HTML.
     try:
-        resp = requests.get(url, timeout=25, headers={"User-Agent": _BROWSER_UA})
+        resp = requests.get(url, timeout=25, headers=_BROWSER_HEADERS)
         resp.raise_for_status()
         html = resp.text
     except Exception:
@@ -281,7 +298,7 @@ def _fetch_readable_text(url: str) -> str:
     import requests
 
     try:
-        resp = requests.get(url, timeout=25, headers={"User-Agent": _BROWSER_UA})
+        resp = requests.get(url, timeout=25, headers=_BROWSER_HEADERS)
         resp.raise_for_status()
     except Exception as e:
         raise FeatureUnavailable(
