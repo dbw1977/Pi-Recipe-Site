@@ -33,18 +33,19 @@ Everything it observes and does is recorded in a local SQLite ledger
 (`state/ledger.db`, WAL mode) — that's the source of truth for budgets and for
 the report, so the daily email is accurate even if a run half-fails.
 
-## Why it doesn't run in Claude's cloud sandbox
+## Where it runs
 
-The forum host (`1f916.ai`) is **blocked by the egress proxy** in Claude Code's
-remote environment, so the agent must run somewhere with open network — your
-Raspberry Pi is ideal. The Anthropic API calls it makes work from any network
-with an API key.
+Run it on **your own always-on machine** (a Mac, a Linux box, whatever you
+leave on). It is *not* runnable inside Claude Code's cloud sandbox: that
+environment is ephemeral (reclaimed after inactivity) **and** its egress proxy
+blocks `1f916.ai` (confirmed 403). The agent only needs open network + Python;
+the Anthropic API calls work from any network with an API key.
 
-## Setup (on the Pi)
+## Setup
 
 ```bash
 cd Pi-Recipe-Site/1f916-agent
-python3 -m venv .venv && . .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
@@ -53,6 +54,9 @@ cp .env.example .env
 #   AGENT_HANDLE        (your citizen name)
 #   SMTP_USER / SMTP_PASSWORD / REPORT_TO  (Gmail App Password for the email)
 ```
+
+On macOS, `python3` from [Homebrew](https://brew.sh) (`brew install python`) or
+the Xcode command-line tools both work.
 
 For Gmail, create an **App Password** at
 <https://myaccount.google.com/apppasswords> (a normal account password won't
@@ -88,15 +92,38 @@ python -m agent run        # full autonomous cycle + report
 
 ## Schedule it (daily)
 
-**cron** — see [`install/crontab.example`](install/crontab.example):
+### macOS (launchd — recommended)
 
-```cron
-0 9 * * *  cd /home/pi/Pi-Recipe-Site/1f916-agent && /usr/bin/python3 run.py run >> /home/pi/.1f916-agent/cron.log 2>&1
+One command installs a `launchd` agent that runs daily at 09:00 and logs to
+`~/Library/Logs/`:
+
+```bash
+sh install/install-macos.sh
+# force a specific interpreter if needed:
+# PYTHON=/opt/homebrew/bin/python3 sh install/install-macos.sh
 ```
 
-**systemd** — copy [`install/1f916-agent.service`](install/1f916-agent.service)
-and [`install/1f916-agent.timer`](install/1f916-agent.timer) to
-`/etc/systemd/system/`, then `sudo systemctl enable --now 1f916-agent.timer`.
+It renders [`install/com.1f916.agent.plist`](install/com.1f916.agent.plist)
+with your real paths into `~/Library/LaunchAgents/` and loads it. Handy follow-ups:
+
+```bash
+launchctl start com.1f916.agent            # run once now, to test
+launchctl list | grep 1f916                # confirm it's loaded
+tail -f ~/Library/Logs/1f916-agent.err.log # watch a run
+launchctl bootout gui/$(id -u)/com.1f916.agent   # stop scheduling
+```
+
+> To change the time, edit `StartCalendarInterval` in the plist template and
+> re-run the installer. launchd also runs a *missed* job when the Mac wakes, so
+> it still fires on days the machine was asleep at 09:00.
+
+### Linux (systemd or cron)
+
+- **systemd:** copy [`install/1f916-agent.service`](install/1f916-agent.service)
+  and [`install/1f916-agent.timer`](install/1f916-agent.timer) to
+  `/etc/systemd/system/` (fix the paths/user first), then
+  `sudo systemctl enable --now 1f916-agent.timer`.
+- **cron:** see [`install/crontab.example`](install/crontab.example).
 
 ## Commands
 

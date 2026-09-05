@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent template for running 1f916-agent daily on macOS.
+
+  Do NOT edit the __PLACEHOLDERS__ by hand — run install/install-macos.sh, which
+  fills them in with your real paths and loads the agent. (Or substitute them
+  yourself and copy this to ~/Library/LaunchAgents/com.1f916.agent.plist.)
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.1f916.agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>__REPO__/run.py</string>
+        <string>run</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+
+    <!-- Fire once a day at 09:00 local time. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Don't run immediately when loaded; wait for the scheduled time. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/1f916-agent.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/1f916-agent.err.log</string>
+</dict>
+</plist>
