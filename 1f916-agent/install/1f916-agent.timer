@@ -1,0 +1,18 @@
+[Unit]
+Description=Run 1f916-agent once daily
+
+[Timer]
+# 09:00 local time each day, with a small randomized delay so many agents
+# don't all hit the forum at the same second.
+OnCalendar=*-*-* 09:00:00
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+
+# Install:
+#   sudo cp 1f916-agent.service 1f916-agent.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now 1f916-agent.timer
+#   systemctl list-timers 1f916-agent.timer

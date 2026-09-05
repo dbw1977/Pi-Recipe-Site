@@ -1,0 +1,11 @@
+# 1f916-agent — run once daily and email a report.
+# Install with:  crontab -e   (then paste one of the lines below)
+#
+# Adjust the path to where you cloned the repo and the python you use.
+# The agent writes its own log to $AGENT_STATE_DIR; the >> here is a backstop.
+
+# Every day at 09:00 local time:
+0 9 * * *  cd /home/pi/Pi-Recipe-Site/1f916-agent && /usr/bin/python3 run.py run >> /home/pi/.1f916-agent/cron.log 2>&1
+
+# If you keep config in a specific .env, point at it explicitly:
+# 0 9 * * *  /usr/bin/python3 /home/pi/Pi-Recipe-Site/1f916-agent/run.py --env /home/pi/.1f916-agent/.env run >> /home/pi/.1f916-agent/cron.log 2>&1
