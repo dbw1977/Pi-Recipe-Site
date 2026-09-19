@@ -263,38 +263,40 @@ export default function RecipeEdit() {
             </div>
             <div className="space-y-2">
               {group.ingredients.map((ing, ii) => (
-                <div key={ii} className="rounded-lg bg-white p-2 ring-1 ring-black/5">
-                  <div className="flex gap-2">
+                <div key={ii} className="rounded-lg bg-white p-2.5 ring-1 ring-black/5">
+                  {/* Name is the primary field — full width and prominent so it's always readable. */}
+                  <div className="flex items-center gap-2">
                     <input
-                      className={`${inputCls} w-16 text-center`}
+                      className={`${inputCls} flex-1 font-medium`}
+                      value={ing.name}
+                      onChange={(e) => updateIngredient(gi, ii, { name: e.target.value })}
+                      placeholder="ingredient name"
+                    />
+                    <button
+                      onClick={() => removeIngredient(gi, ii)}
+                      className="shrink-0 px-2 py-1 text-lg text-muted"
+                      aria-label="Remove ingredient"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {/* Amount, unit, and the scales toggle share a second line where they have room. */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      className={`${inputCls} w-20 text-center`}
                       value={ing.quantity ?? ''}
                       onChange={(e) => updateIngredient(gi, ii, { quantity: e.target.value === '' ? null : Number(e.target.value) })}
                       inputMode="decimal"
                       placeholder="qty"
                     />
                     <input
-                      className={`${inputCls} w-20`}
+                      className={`${inputCls} w-24`}
                       list="units"
                       value={ing.unit ?? ''}
                       onChange={(e) => updateIngredient(gi, ii, { unit: e.target.value || null })}
                       placeholder="unit"
                     />
-                    <input
-                      className={`${inputCls} flex-1`}
-                      value={ing.name}
-                      onChange={(e) => updateIngredient(gi, ii, { name: e.target.value })}
-                      placeholder="ingredient"
-                    />
-                    <button onClick={() => removeIngredient(gi, ii)} className="px-1 text-muted" aria-label="Remove">✕</button>
-                  </div>
-                  <div className="mt-2 flex items-center gap-3">
-                    <input
-                      className={`${inputCls} flex-1 !py-2 text-sm`}
-                      value={ing.note ?? ''}
-                      onChange={(e) => updateIngredient(gi, ii, { note: e.target.value })}
-                      placeholder="note (minced, to taste…)"
-                    />
-                    <label className="flex shrink-0 items-center gap-1.5 text-sm text-muted">
+                    <label className="ml-auto flex shrink-0 items-center gap-1.5 text-sm text-muted">
                       <input
                         type="checkbox"
                         checked={!!ing.scalable}
@@ -304,6 +306,12 @@ export default function RecipeEdit() {
                       scales
                     </label>
                   </div>
+                  <input
+                    className={`${inputCls} mt-2 w-full !py-2 text-sm`}
+                    value={ing.note ?? ''}
+                    onChange={(e) => updateIngredient(gi, ii, { note: e.target.value })}
+                    placeholder="note (minced, to taste…)"
+                  />
                 </div>
               ))}
             </div>
