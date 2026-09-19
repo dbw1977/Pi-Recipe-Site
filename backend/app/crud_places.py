@@ -81,9 +81,23 @@ def _rebuild_fts(conn: sqlite3.Connection, place_id: int) -> None:
             "SELECT name, note FROM place_dish WHERE place_id = ?", (place_id,)
         )
     ]
+    # All tags across every category — so typing any tag name in search matches (parity
+    # with recipes). `cuisine` above stays a separate column for its own bm25 weight.
+    tag_names = [
+        row["name"]
+        for row in conn.execute(
+            """
+            SELECT t.name FROM tag t
+            JOIN place_tag pt ON pt.tag_id = t.id
+            WHERE pt.place_id = ?
+            """,
+            (place_id,),
+        )
+    ]
     conn.execute("DELETE FROM place_fts WHERE rowid = ?", (place_id,))
     conn.execute(
-        "INSERT INTO place_fts(rowid, name, city, cuisine, dishes, notes) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO place_fts(rowid, name, city, cuisine, dishes, notes, tags) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             place_id,
             p["name"] or "",
@@ -91,6 +105,7 @@ def _rebuild_fts(conn: sqlite3.Connection, place_id: int) -> None:
             " ".join(cuisine),
             " ".join(dishes),
             p["our_notes"] or "",
+            " ".join(tag_names),
         ),
     )
 
@@ -262,7 +277,8 @@ def list_places(
         joins += " JOIN place_fts f ON f.rowid = p.id"
         where.append("place_fts MATCH ?")
         params.append(_build_fts_query(query))
-        order = "bm25(place_fts, 10.0, 6.0, 4.0, 6.0, 2.0)"
+        # Column order: name, city, cuisine, dishes, notes, tags.
+        order = "bm25(place_fts, 10.0, 6.0, 4.0, 6.0, 2.0, 4.0)"
 
     if city:
         where.append("p.city = ?")

@@ -66,6 +66,28 @@ def test_place_search(client: TestClient):
     assert len(client.get("/api/places", params={"q": "sushi"}).json()) == 0
 
 
+def test_place_search_by_tag_name(client: TestClient):
+    # A place tagged Mexican should surface when you type the tag name in search,
+    # not only via the Filters chips (parity with recipe tag search).
+    mex = _cuisine_id(client, "Mexican")
+    client.post("/api/places", json={"name": "Taqueria Uno", "city": "Gainesville",
+                                     "tag_ids": [mex]})
+    assert len(client.get("/api/places", params={"q": "mexican"}).json()) == 1
+    assert len(client.get("/api/places", params={"q": "italian"}).json()) == 0
+
+
+def test_place_fts_tags_stay_in_sync_on_update(client: TestClient):
+    mex = _cuisine_id(client, "Mexican")
+    thai = _cuisine_id(client, "Thai")
+    pid = client.post("/api/places", json={"name": "Fusion Spot", "city": "Gainesville",
+                                           "tag_ids": [mex]}).json()["id"]
+    assert len(client.get("/api/places", params={"q": "mexican"}).json()) == 1
+    client.put(f"/api/places/{pid}", json={"name": "Fusion Spot", "city": "Gainesville",
+                                           "visited": 0, "tag_ids": [thai]})
+    assert len(client.get("/api/places", params={"q": "mexican"}).json()) == 0
+    assert len(client.get("/api/places", params={"q": "thai"}).json()) == 1
+
+
 def test_place_update_and_delete(client: TestClient):
     pid = client.post("/api/places", json={"name": "Temp Spot", "city": "Gainesville"}).json()["id"]
     r = client.put(f"/api/places/{pid}", json={"name": "Renamed Spot", "city": "Austin", "visited": 0})

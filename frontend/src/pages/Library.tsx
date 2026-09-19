@@ -58,7 +58,7 @@ export default function Library() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search recipes, ingredients, @source…"
+          placeholder="Search name, ingredient, tag, @source…"
           className="w-full rounded-xl border-0 bg-paper px-4 py-3 text-base shadow-sm ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-ember/40"
           inputMode="search"
         />

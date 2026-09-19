@@ -50,7 +50,7 @@ export default function PlacesLibrary() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search places, dishes, cities…"
+          placeholder="Search name, dish, tag, city…"
           className="w-full rounded-xl border-0 bg-paper px-4 py-3 text-base shadow-sm ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-ember/40"
           inputMode="search"
         />
