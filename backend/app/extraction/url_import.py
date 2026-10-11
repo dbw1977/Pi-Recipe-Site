@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 
 from ..schemas import GroupIn, IngredientIn, RecipeIn, StepIn
 from . import claude, media
@@ -245,6 +246,164 @@ def _import_reddit(conn: sqlite3.Connection, url: str) -> ImportResult:
     return ImportResult(recipe=recipe)
 
 
+# --------------------------------------------------------------------------- #
+# Substack — a newsletter post, not a recipe page: no schema.org Recipe data, the recipe
+# sits somewhere in a long article, and the share links from the app
+# (substack.com/home/post/p-<id>) are JS shells with no article HTML at all. Substack serves
+# each post as JSON (`/api/v1/posts/...`) with the clean body, so read that and let Claude
+# structure the text. Best-effort: any failure returns None and the generic path takes over.
+# --------------------------------------------------------------------------- #
+_SUBSTACK_MAX_CHARS = 40000  # newsletter recipes can come late; Haiku has the room
+
+
+def _substack_api_url(url: str) -> str | None:
+    """The JSON API URL for a post link, or None if this doesn't look like a Substack post.
+
+    - substack.com/home/post/p-<id>   (app share links)  -> /api/v1/posts/by-id/<id>
+    - <pub>.substack.com/p/<slug>, or a custom domain's /p/<slug> -> <host>/api/v1/posts/<slug>
+    A non-Substack site that happens to use /p/ simply 404s the API call and falls through.
+    """
+    m = re.match(r"^https?://([^/?#]+)(/[^?#]*)?", url)
+    if not m:
+        return None
+    host, path = m.group(1).lower(), (m.group(2) or "").rstrip("/")
+    if host in ("substack.com", "www.substack.com"):
+        pid = re.fullmatch(r"/home/post/p-(\d+)", path)
+        if pid:
+            return f"https://substack.com/api/v1/posts/by-id/{pid.group(1)}"
+        return None  # notes, profiles, app-links: not handled here
+    slug = re.fullmatch(r"/p/([A-Za-z0-9][\w-]*)", path)
+    if slug:
+        return f"https://{host}/api/v1/posts/{slug.group(1)}"
+    return None
+
+
+class _HtmlText(HTMLParser):
+    """Post HTML -> plain text that keeps one line per paragraph and "- " list items, so an
+    ingredient list stays line-per-ingredient for Claude (a naive tag strip glues them together)."""
+
+    _BLOCK = {"p", "div", "br", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol",
+              "blockquote", "tr", "hr", "figure", "figcaption"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self._skip = 0
+        self._fresh_li = False  # Substack wraps list text in <p>; don't split "- " from its text
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style"):
+            self._skip += 1
+        elif tag == "li":
+            self.parts.append("\n- ")
+            self._fresh_li = True
+        elif tag in self._BLOCK and not self._fresh_li:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style"):
+            self._skip = max(0, self._skip - 1)
+        elif tag in self._BLOCK or tag == "li":
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if self._skip:
+            return
+        if data.strip():
+            self._fresh_li = False
+        self.parts.append(data)
+
+
+def _html_to_text(html: str) -> str:
+    p = _HtmlText()
+    p.feed(html)
+    p.close()
+    lines = [re.sub(r"[ \t]+", " ", ln).strip() for ln in "".join(p.parts).splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _substack_post(url: str) -> dict | None:
+    """Fetch a Substack post as JSON -> {title, text, publication, author, image, canonical_url}.
+
+    Returns None when this isn't (or can't be read as) a Substack post, so the caller falls
+    back to the generic importer. Raises FeatureUnavailable for paywalled posts, since the API
+    only returns a teaser there and importing it would silently capture a fragment."""
+    api = _substack_api_url(url)
+    if not api:
+        return None
+    import requests
+
+    try:
+        resp = requests.get(api, timeout=25, headers={**_BROWSER_HEADERS, "Accept": "application/json"})
+        if resp.status_code != 200:
+            return None
+        post = resp.json()
+        if not isinstance(post, dict):
+            return None
+    except Exception:
+        return None
+
+    body_html = post.get("body_html")
+    if not isinstance(body_html, str) or not body_html.strip():
+        return None
+
+    if post.get("audience") not in (None, "everyone", "only_free"):
+        raise FeatureUnavailable(
+            "That Substack post is for paid subscribers, so only a preview is public and "
+            "there's no full recipe to import. Open it on your phone while signed in, "
+            "screenshot the recipe, and use “From a screenshot” instead."
+        )
+
+    title = (post.get("title") or "").strip()
+    subtitle = (post.get("subtitle") or "").strip()
+    text = "\n\n".join(p for p in (f"Title: {title}", subtitle, _html_to_text(body_html)) if p)
+
+    publication = (post.get("publication") or {}).get("name") if isinstance(post.get("publication"), dict) else None
+    bylines = post.get("publishedBylines") if isinstance(post.get("publishedBylines"), list) else []
+    author = (bylines[0].get("name") if bylines and isinstance(bylines[0], dict) else None)
+
+    image = post.get("cover_image")
+    if not image:
+        img = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', body_html, flags=re.I)
+        image = img.group(1) if img else None
+
+    return {
+        "title": title,
+        "text": text,
+        "publication": publication,
+        "author": author,
+        "image": image,
+        "canonical_url": post.get("canonical_url"),
+    }
+
+
+def _import_substack(conn: sqlite3.Connection, url: str) -> ImportResult | None:
+    post = _substack_post(url)
+    if post is None:
+        return None  # not readable as a Substack post -> generic importer
+    if not claude.available():
+        raise FeatureUnavailable(
+            "Substack posts are articles with no recipe data, so importing them needs the "
+            "Anthropic key to pull out the ingredients and steps. Add ANTHROPIC_API_KEY, "
+            "or copy it in by hand.",
+            needs="ANTHROPIC_API_KEY",
+        )
+    tag_index = load_tag_index(conn)
+    extracted = claude.structure_text(
+        post["text"], tag_index.allowed_by_category,
+        kind="Substack newsletter post", max_chars=_SUBSTACK_MAX_CHARS,
+    )
+    extracted.source_name = extracted.source_name or post["publication"] or post["author"]
+    hero = media.download_image(post["image"]) if post["image"] else None
+    recipe = to_recipe_input(
+        extracted, source_type="url", tag_index=tag_index,
+        # The app share link (substack.com/home/post/p-…) is a dead end in a browser; keep the
+        # post's real address when the API gave one.
+        source_url=post["canonical_url"] or url, hero_image=hero,
+    )
+    return ImportResult(recipe=recipe)
+
+
 def import_url(conn: sqlite3.Connection, url: str) -> ImportResult:
     url = url.strip()
     if not re.match(r"^https?://", url):
@@ -252,6 +411,10 @@ def import_url(conn: sqlite3.Connection, url: str) -> ImportResult:
 
     if _is_reddit(url):
         return _import_reddit(conn, url)
+
+    substack = _import_substack(conn, url)
+    if substack is not None:
+        return substack
 
     tag_index = load_tag_index(conn)
     scraped = _try_scraper(url)
@@ -328,6 +491,11 @@ def _readable_from_html(html: str) -> str:
 
     # 2) The visible page text, scripts/styles stripped, as a backstop.
     stripped = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    # Prefer the <article> body when there is one: otherwise nav bars and subscribe banners
+    # eat the 12k budget before the recipe (blogs/newsletters) is reached.
+    article = re.search(r"<article\b.*?</article>", stripped, flags=re.S | re.I)
+    if article and len(re.sub(r"<[^>]+>", "", article.group(0)).strip()) > 500:
+        stripped = article.group(0)
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", stripped))[:12000]
 
     parts = []

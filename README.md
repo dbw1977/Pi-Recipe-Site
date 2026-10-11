@@ -79,6 +79,17 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000  # serves API + the built app
 Copy `.env.example` to `.env` and set at least `RECIPE_DB_PATH` to a **local-disk** path
 (never a NAS mount — see the golden rule below).
 
+### Updating the Pi
+
+```bash
+~/pi-recipe-site/scripts/update.sh          # pull · deps · frontend build · restart
+~/pi-recipe-site/scripts/update.sh --apt    # same, after `apt update && apt upgrade` first
+```
+
+`apt upgrade` alone only updates system packages (ffmpeg, avahi, …) — it never pulls this
+repo, rebuilds the frontend, or restarts the service. The script does all of it and checks
+`/api/health` at the end. New DB migrations apply automatically on restart.
+
 ## Tests
 
 ```bash

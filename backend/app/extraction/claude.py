@@ -207,10 +207,16 @@ def extract_from_images(
 
 
 def structure_text(
-    text: str, allowed_by_category: dict[str, list[str]], *, kind: str = "page text"
+    text: str,
+    allowed_by_category: dict[str, list[str]],
+    *,
+    kind: str = "page text",
+    max_chars: int = 12000,
 ) -> ExtractedRecipe:
+    # max_chars: newsletter posts (Substack) bury the recipe after a long intro, so those
+    # callers raise the cap; everything else keeps the default.
     content = [
-        {"type": "text", "text": f"Structure this {kind} into recipe JSON per the schema:\n\n{text[:12000]}"},
+        {"type": "text", "text": f"Structure this {kind} into recipe JSON per the schema:\n\n{text[:max_chars]}"},
     ]
     return _extract(content, allowed_by_category)
 
