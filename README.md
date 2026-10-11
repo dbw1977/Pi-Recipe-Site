@@ -368,6 +368,18 @@ polish and photo upload apply regardless.
 Without a key, the AI action is cleanly disabled and everything else still works. This
 completes the six-chunk build (A–F).
 
+### Library: paging, sorting, star ratings
+
+- **Paging** — the Cook library shows **20 / 50 / 100** recipes per page (picker under the grid,
+  remembered per device). The API takes `limit` + `offset` and returns the total in an
+  `X-Total-Count` header; the body stays a plain list, so other callers are unaffected.
+- **Sorting** — newest/oldest **added** (editing never makes a recipe "new"), A→Z / Z→A, highest /
+  lowest rated (unrated always last), plus **Best match** while searching. `?sort=` on the API.
+- **Ratings** — our own 1–5 stars, tapped on the recipe page (tap the same star again to clear)
+  and shown on library cards. Stored in `recipe.rating` (migration 008, nullable — existing
+  recipes simply start unrated) via `PUT /api/recipes/{id}/rating`, separate from the edit form
+  so saving an edit can't wipe it.
+
 ## Not in these chunks (by design)
 
 - Google Places API autocomplete (v1 uses a pasted Maps link) and public link sharing

@@ -5,6 +5,7 @@ import { scaleQuantity } from '../lib/scaling';
 import { dayLabel, rangeLabel, upcomingSaturday } from '../lib/dates';
 import { mediaUrl } from './Library';
 import OverflowMenu from '../components/OverflowMenu';
+import StarRating from '../components/StarRating';
 
 const FACTORS = [1, 2, 3];
 
@@ -94,6 +95,18 @@ export default function RecipeView() {
     navigate('/');
   };
 
+  // Saves on tap. Optimistic so the stars respond instantly; put them back if the save fails.
+  const rate = async (next: number | null) => {
+    const prev = recipe.rating ?? null;
+    setRecipe({ ...recipe, rating: next });
+    try {
+      await api.setRecipeRating(recipe.id, next);
+    } catch (er) {
+      setRecipe((r) => (r ? { ...r, rating: prev } : r));
+      setNotice(`Couldn't save the rating — ${(er as Error).message}`);
+    }
+  };
+
   // Middle ground: a generated/imported draft is cookable right here; "Save to library"
   // publishes it into the grid only when it's a keeper.
   const saveToLibrary = async () => {
@@ -121,6 +134,9 @@ export default function RecipeView() {
         </div>
         <div className="p-4">
           <h1 className="font-display text-2xl font-semibold leading-tight">{recipe.title}</h1>
+          <div className="mt-1.5">
+            <StarRating value={recipe.rating} onChange={rate} size="lg" />
+          </div>
           {recipe.generated ? (
             <div className="no-print mt-2 rounded-lg bg-ember/8 px-3 py-2 text-sm text-emberDark ring-1 ring-ember/15">
               ✨ <strong>AI variation</strong>

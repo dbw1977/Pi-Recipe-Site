@@ -290,32 +290,50 @@ def get_card(conn: sqlite3.Connection, recipe_id: int) -> RecipeCard | None:
     return _card_from_row(conn, row) if row else None
 
 
-def list_recipes(
+# Sort keys the library accepts (validated at the router). Every ordering ends in r.id so
+# paging is stable when two recipes tie (created_at only has 1-second resolution).
+# "Date added" is created_at, not updated_at — editing a recipe must not make it "new" again.
+# Unrated recipes always sort last for both rating directions.
+_ADDED = "COALESCE(r.created_at, r.updated_at, '')"
+_SORTS = {
+    "newest": f"{_ADDED} DESC, r.id DESC",
+    "oldest": f"{_ADDED} ASC, r.id ASC",
+    "title_asc": "r.title COLLATE NOCASE ASC, r.id ASC",
+    "title_desc": "r.title COLLATE NOCASE DESC, r.id DESC",
+    "rating_desc": "(r.rating IS NULL) ASC, r.rating DESC, r.title COLLATE NOCASE ASC, r.id ASC",
+    "rating_asc": "(r.rating IS NULL) ASC, r.rating ASC, r.title COLLATE NOCASE ASC, r.id ASC",
+}
+SORT_KEYS = ("relevance", *_SORTS)
+
+
+def list_recipes_page(
     conn: sqlite3.Connection,
     query: str | None = None,
     tag_ids: list[int] | None = None,
     status: str = "published",
-) -> list[RecipeCard]:
-    """List recipe cards, optionally filtered by FTS search and/or tag ids (AND across tags).
+    sort: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> tuple[list[RecipeCard], int]:
+    """One page of recipe cards plus the TOTAL number matching (for "21-40 of 87").
 
-    Empty query = full grid (spec §9). Search and tag filters combine.
+    Filters: FTS search and/or tag ids (AND across tags); empty query = full grid (spec §9).
+    `sort` is one of SORT_KEYS; "relevance" (bm25) only applies while searching. With no
+    `sort` the order is the original one (most recently updated first), so existing callers
+    are unchanged. `limit=None` returns everything from `offset`.
     """
     tag_ids = tag_ids or []
-    # Params are collected in the exact left-to-right order the placeholders appear in the
-    # final SQL string: JOIN, then WHERE.
-    join_params: list = []
-    where_params: list = []
     joins = ""
     where = ["r.status = ?"]
-    where_params.append(status)
+    params: list = [status]
     order = "r.updated_at DESC, r.id DESC"
+    searching = bool(query and query.strip())
 
-    if query and query.strip():
+    if searching:
         # Prefix match on each term; rank title/ingredients above notes via bm25 weights.
-        fts_query = _build_fts_query(query)
         joins += " JOIN recipe_fts f ON f.rowid = r.id"
         where.append("recipe_fts MATCH ?")
-        where_params.append(fts_query)
+        params.append(_build_fts_query(query))
         # bm25 returns lower (more negative) = better; column order:
         # title, description, source, ingredients, tags. (Kept out of any GROUP BY —
         # tag AND-filtering below is a subquery, so bm25 stays usable in ORDER BY.)
@@ -329,16 +347,46 @@ def list_recipes(
             "r.id IN (SELECT recipe_id FROM recipe_tag WHERE tag_id IN "
             f"({placeholders}) GROUP BY recipe_id HAVING COUNT(DISTINCT tag_id) = ?)"
         )
-        where_params.extend(tag_ids)
-        where_params.append(len(tag_ids))
+        params.extend(tag_ids)
+        params.append(len(tag_ids))
 
-    sql = (
-        f"SELECT r.* FROM recipe r{joins} "
-        f"WHERE {' AND '.join(where)} ORDER BY {order}"
-    )
-    params = join_params + where_params
-    rows = conn.execute(sql, params).fetchall()
-    return [_card_from_row(conn, row) for row in rows]
+    if sort in _SORTS:
+        order = _SORTS[sort]
+    elif sort == "relevance" and not searching:
+        order = _SORTS["newest"]  # nothing to rank by without a query
+
+    where_sql = " AND ".join(where)
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM recipe r{joins} WHERE {where_sql}", params
+    ).fetchone()[0]
+
+    sql = f"SELECT r.* FROM recipe r{joins} WHERE {where_sql} ORDER BY {order}"
+    page_params = list(params)
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        page_params += [limit, max(0, offset)]
+    elif offset:
+        sql += " LIMIT -1 OFFSET ?"
+        page_params.append(max(0, offset))
+    rows = conn.execute(sql, page_params).fetchall()
+    return [_card_from_row(conn, row) for row in rows], total
+
+
+def list_recipes(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    tag_ids: list[int] | None = None,
+    status: str = "published",
+) -> list[RecipeCard]:
+    """Every matching recipe card (no paging) — see list_recipes_page."""
+    return list_recipes_page(conn, query, tag_ids, status)[0]
+
+
+def set_rating(conn: sqlite3.Connection, recipe_id: int, rating: int | None) -> bool:
+    """Set (1-5) or clear (None) our star rating. Deliberately leaves updated_at alone —
+    rating a recipe isn't editing it."""
+    cur = conn.execute("UPDATE recipe SET rating = ? WHERE id = ?", (rating, recipe_id))
+    return cur.rowcount > 0
 
 
 def _build_fts_query(query: str) -> str:

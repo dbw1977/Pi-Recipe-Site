@@ -100,6 +100,7 @@ class RecipeOut(BaseModel):
     status: str
     created_at: Optional[str]
     updated_at: Optional[str]
+    rating: Optional[int] = None  # our 1-5 stars; None = not rated yet
     groups: list[GroupOut]
     steps: list[StepOut]
     equipment: list[EquipmentOut]
@@ -124,6 +125,7 @@ class RecipeCard(BaseModel):
     status: str
     tags: list[TagOut]
     generated: int = 0
+    rating: Optional[int] = None
 
 
 class TagCategoryOut(BaseModel):

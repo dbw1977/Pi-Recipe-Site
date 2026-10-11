@@ -1,8 +1,10 @@
 """Recipe CRUD + library/search + AI variations (Chunk F)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from typing import Literal, Optional
+
+from fastapi import APIRouter, HTTPException, Query, Response
+from pydantic import BaseModel, Field
 
 from .. import crud
 from ..db import get_connection, transaction
@@ -17,16 +19,28 @@ router = APIRouter(prefix="/api/recipes", tags=["recipes"])
 
 @router.get("", response_model=list[RecipeCard])
 def list_recipes(
+    response: Response,
     q: str | None = Query(default=None, description="Full-text search (title, ingredients, tags, source, notes)"),
     tags: str | None = Query(default=None, description="Comma-separated tag ids; recipe must have ALL of them"),
     status: str = Query(default="published"),
+    sort: Optional[Literal["relevance", "newest", "oldest", "title_asc", "title_desc",
+                           "rating_desc", "rating_asc"]] = Query(
+        default=None, description="Order; omitted = most recently updated first"),
+    limit: Optional[int] = Query(default=None, ge=1, le=200, description="Page size; omitted = all"),
+    offset: int = Query(default=0, ge=0),
 ):
+    """Recipe cards. The total matching count (ignoring limit/offset) is sent in the
+    `X-Total-Count` header so the body stays a plain list for every existing caller."""
     tag_ids = [int(t) for t in tags.split(",") if t.strip().isdigit()] if tags else []
     conn = get_connection()
     try:
-        return crud.list_recipes(conn, query=q, tag_ids=tag_ids, status=status)
+        cards, total = crud.list_recipes_page(
+            conn, query=q, tag_ids=tag_ids, status=status, sort=sort, limit=limit, offset=offset
+        )
     finally:
         conn.close()
+    response.headers["X-Total-Count"] = str(total)
+    return cards
 
 
 @router.get("/{recipe_id}", response_model=RecipeOut)
@@ -151,5 +165,19 @@ def set_hero(recipe_id: int, payload: HeroIn):
     """Set the hero image (used by the device photo uploader, Chunk F)."""
     with transaction() as conn:
         if not crud.set_hero(conn, recipe_id, payload.hero_image):
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        return crud.get_recipe(conn, recipe_id)
+
+
+class RatingIn(BaseModel):
+    rating: Optional[int] = Field(default=None, ge=1, le=5)  # null clears the rating
+
+
+@router.put("/{recipe_id}/rating", response_model=RecipeOut)
+def set_rating(recipe_id: int, payload: RatingIn):
+    """Set our 1-5 star rating (or clear it with null). Separate from the full recipe PUT so
+    editing a recipe can never overwrite its rating."""
+    with transaction() as conn:
+        if not crud.set_rating(conn, recipe_id, payload.rating):
             raise HTTPException(status_code=404, detail="Recipe not found")
         return crud.get_recipe(conn, recipe_id)

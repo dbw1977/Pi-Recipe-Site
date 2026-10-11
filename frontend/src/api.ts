@@ -58,6 +58,7 @@ export interface Recipe {
   status: string;
   created_at: string | null;
   updated_at: string | null;
+  rating?: number | null; // our 1-5 stars; null/absent = not rated
   groups: Group[];
   steps: Step[];
   equipment: Equipment[];
@@ -80,6 +81,7 @@ export interface RecipeCard {
   status: string;
   tags: Tag[];
   generated?: number;
+  rating?: number | null;
 }
 
 export interface DraftCard extends RecipeCard {
@@ -298,6 +300,21 @@ async function handle<T>(res: Response): Promise<T> {
   return res.json();
 }
 
+/** Sort orders the library understands (server-validated). 'relevance' only applies to a search. */
+export type RecipeSort =
+  | 'relevance'
+  | 'newest'
+  | 'oldest'
+  | 'title_asc'
+  | 'title_desc'
+  | 'rating_desc'
+  | 'rating_asc';
+
+export interface RecipePage {
+  items: RecipeCard[];
+  total: number; // everything matching, across all pages
+}
+
 async function req<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
@@ -319,6 +336,31 @@ export const api = {
     if (tagIds && tagIds.length) params.set('tags', tagIds.join(','));
     const qs = params.toString();
     return req<RecipeCard[]>(`/api/recipes${qs ? `?${qs}` : ''}`);
+  },
+  /** One page of the library; `total` comes from the X-Total-Count header. */
+  async listRecipesPage(opts: {
+    q?: string;
+    tagIds?: number[];
+    sort?: RecipeSort;
+    limit: number;
+    offset: number;
+  }): Promise<RecipePage> {
+    const params = new URLSearchParams();
+    if (opts.q) params.set('q', opts.q);
+    if (opts.tagIds && opts.tagIds.length) params.set('tags', opts.tagIds.join(','));
+    if (opts.sort) params.set('sort', opts.sort);
+    params.set('limit', String(opts.limit));
+    params.set('offset', String(opts.offset));
+    const res = await fetch(`/api/recipes?${params.toString()}`);
+    const items = await handle<RecipeCard[]>(res);
+    const total = Number(res.headers.get('X-Total-Count'));
+    return { items, total: Number.isFinite(total) && total >= 0 ? total : items.length };
+  },
+  setRecipeRating(id: number, rating: number | null): Promise<Recipe> {
+    return req<Recipe>(`/api/recipes/${id}/rating`, {
+      method: 'PUT',
+      body: JSON.stringify({ rating }),
+    });
   },
   getRecipe(id: number): Promise<Recipe> {
     return req<Recipe>(`/api/recipes/${id}`);
