@@ -300,8 +300,8 @@ async function handle<T>(res: Response): Promise<T> {
   return res.json();
 }
 
-/** Sort orders the library understands (server-validated). 'relevance' only applies to a search. */
-export type RecipeSort =
+/** Sort orders the Cook and Eat Out libraries understand (server-validated). 'relevance' only applies to a search. */
+export type ListSort =
   | 'relevance'
   | 'newest'
   | 'oldest'
@@ -310,10 +310,11 @@ export type RecipeSort =
   | 'rating_desc'
   | 'rating_asc';
 
-export interface RecipePage {
-  items: RecipeCard[];
+export interface Page<T> {
+  items: T[];
   total: number; // everything matching, across all pages
 }
+export type RecipePage = Page<RecipeCard>;
 
 async function req<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -329,6 +330,14 @@ async function postForm<T>(url: string, form: FormData): Promise<T> {
   return handle<T>(res);
 }
 
+// A list endpoint that reports its total (ignoring limit/offset) in the X-Total-Count header.
+async function fetchPage<T>(url: string): Promise<Page<T>> {
+  const res = await fetch(url);
+  const items = await handle<T[]>(res);
+  const total = Number(res.headers.get('X-Total-Count'));
+  return { items, total: Number.isFinite(total) && total >= 0 ? total : items.length };
+}
+
 export const api = {
   listRecipes(q?: string, tagIds?: number[]): Promise<RecipeCard[]> {
     const params = new URLSearchParams();
@@ -338,23 +347,20 @@ export const api = {
     return req<RecipeCard[]>(`/api/recipes${qs ? `?${qs}` : ''}`);
   },
   /** One page of the library; `total` comes from the X-Total-Count header. */
-  async listRecipesPage(opts: {
+  listRecipesPage(opts: {
     q?: string;
     tagIds?: number[];
-    sort?: RecipeSort;
+    sort?: ListSort;
     limit: number;
     offset: number;
-  }): Promise<RecipePage> {
+  }): Promise<Page<RecipeCard>> {
     const params = new URLSearchParams();
     if (opts.q) params.set('q', opts.q);
     if (opts.tagIds && opts.tagIds.length) params.set('tags', opts.tagIds.join(','));
     if (opts.sort) params.set('sort', opts.sort);
     params.set('limit', String(opts.limit));
     params.set('offset', String(opts.offset));
-    const res = await fetch(`/api/recipes?${params.toString()}`);
-    const items = await handle<RecipeCard[]>(res);
-    const total = Number(res.headers.get('X-Total-Count'));
-    return { items, total: Number.isFinite(total) && total >= 0 ? total : items.length };
+    return fetchPage<RecipeCard>(`/api/recipes?${params.toString()}`);
   },
   setRecipeRating(id: number, rating: number | null): Promise<Recipe> {
     return req<Recipe>(`/api/recipes/${id}/rating`, {
@@ -451,6 +457,22 @@ export const api = {
     if (city) params.set('city', city);
     const qs = params.toString();
     return req<PlaceCard[]>(`/api/places${qs ? `?${qs}` : ''}`);
+  },
+  /** One page of Eat Out; `total` comes from the X-Total-Count header. */
+  listPlacesPage(opts: {
+    q?: string;
+    tagIds?: number[];
+    sort?: ListSort;
+    limit: number;
+    offset: number;
+  }): Promise<Page<PlaceCard>> {
+    const params = new URLSearchParams();
+    if (opts.q) params.set('q', opts.q);
+    if (opts.tagIds && opts.tagIds.length) params.set('tags', opts.tagIds.join(','));
+    if (opts.sort) params.set('sort', opts.sort);
+    params.set('limit', String(opts.limit));
+    params.set('offset', String(opts.offset));
+    return fetchPage<PlaceCard>(`/api/places?${params.toString()}`);
   },
   getPlace(id: number): Promise<Place> {
     return req<Place>(`/api/places/${id}`);

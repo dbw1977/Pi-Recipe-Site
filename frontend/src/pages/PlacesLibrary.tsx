@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, PlaceCard, TagCategory } from '../api';
+import Pager from '../components/Pager';
+import SortSelect from '../components/SortSelect';
+import { clampPage } from '../lib/paging';
+import { useListPaging } from '../lib/useListPaging';
 import { thumbUrl } from './Library';
 
 const TONES = ['#e9ddcb', '#e6d3c4', '#dfe3d3', '#ead9d4', '#e2ddd0'];
@@ -17,9 +21,14 @@ export default function PlacesLibrary() {
   const [debounced, setDebounced] = useState('');
   const [activeTags, setActiveTags] = useState<number[]>([]);
   const [cards, setCards] = useState<PlaceCard[]>([]);
+  const [total, setTotal] = useState(0);
   const [categories, setCategories] = useState<TagCategory[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const searching = !!debounced;
+  const { page, setPage, pageSize, sort, resetPage, changeSort, changeSize, goToPage } =
+    useListPaging('places', searching);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 220);
@@ -31,16 +40,52 @@ export default function PlacesLibrary() {
   }, []);
 
   useEffect(() => {
+    let stale = false; // ignore a slow response that a newer request has overtaken
     setLoading(true);
     api
-      .listPlaces(debounced || undefined, activeTags)
-      .then(setCards)
-      .catch(() => setCards([]))
-      .finally(() => setLoading(false));
-  }, [debounced, activeTags]);
+      .listPlacesPage({
+        q: debounced || undefined,
+        tagIds: activeTags,
+        sort,
+        limit: pageSize,
+        offset: page * pageSize,
+      })
+      .then(({ items, total: t }) => {
+        if (stale) return;
+        // The list shrank under us — step back to a real page.
+        if (items.length === 0 && t > 0 && page > 0) {
+          setPage(clampPage(page, t, pageSize));
+          return;
+        }
+        setCards(items);
+        setTotal(t);
+      })
+      .catch(() => {
+        if (stale) return;
+        setCards([]);
+        setTotal(0);
+      })
+      .finally(() => {
+        if (!stale) setLoading(false);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [debounced, activeTags, sort, pageSize, page]);
 
-  const toggleTag = (id: number) =>
+  // Any change to what's being listed starts again from the first page.
+  const toggleTag = (id: number) => {
+    resetPage();
     setActiveTags((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
+  };
+  const clearTags = () => {
+    resetPage();
+    setActiveTags([]);
+  };
+  const changeQuery = (v: string) => {
+    resetPage();
+    setQuery(v);
+  };
 
   const nonEmpty = useMemo(() => categories.filter((c) => c.tags.length > 0), [categories]);
 
@@ -49,7 +94,7 @@ export default function PlacesLibrary() {
       <div className="mb-3 flex gap-2">
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => changeQuery(e.target.value)}
           placeholder="Search name, dish, tag, city…"
           className="w-full rounded-xl border-0 bg-paper px-4 py-3 text-base shadow-sm ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-ember/40"
           inputMode="search"
@@ -57,6 +102,16 @@ export default function PlacesLibrary() {
         <button onClick={() => setFiltersOpen((o) => !o)} className="btn-ghost whitespace-nowrap" aria-expanded={filtersOpen}>
           Filters{activeTags.length ? ` · ${activeTags.length}` : ''}
         </button>
+      </div>
+
+      {/* Sort + result count */}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <SortSelect value={sort} onChange={changeSort} searching={searching} />
+        {!loading && total > 0 && (
+          <span className="text-sm tabular-nums text-muted">
+            {total} place{total === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
 
       <div className="mb-4 flex items-center justify-between">
@@ -69,7 +124,7 @@ export default function PlacesLibrary() {
       {filtersOpen && (
         <div className="card mb-4 p-4">
           {activeTags.length > 0 && (
-            <button onClick={() => setActiveTags([])} className="mb-3 text-sm font-medium text-ember underline">
+            <button onClick={clearTags} className="mb-3 text-sm font-medium text-ember underline">
               Clear {activeTags.length} filter{activeTags.length > 1 ? 's' : ''}
             </button>
           )}
@@ -107,6 +162,17 @@ export default function PlacesLibrary() {
             <PlaceTile key={card.id} card={card} tone={TONES[i % TONES.length]} />
           ))}
         </div>
+      )}
+
+      {!loading && (
+        <Pager
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          noun="place"
+          onPage={goToPage}
+          onSize={changeSize}
+        />
       )}
     </div>
   );

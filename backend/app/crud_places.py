@@ -259,21 +259,43 @@ def list_cities(conn: sqlite3.Connection) -> list[str]:
     return [r["city"] for r in rows]
 
 
-def list_places(
+# Same sort keys as recipes (see crud._SORTS): "title" = name, "rating" = our_rating. "Added" is
+# created_at, so editing a place never makes it "new". Unrated sorts last in both rating
+# directions, and every order ends in p.id so paging is stable across ties.
+_ADDED = "COALESCE(p.created_at, p.updated_at, '')"
+_SORTS = {
+    "newest": f"{_ADDED} DESC, p.id DESC",
+    "oldest": f"{_ADDED} ASC, p.id ASC",
+    "title_asc": "p.name COLLATE NOCASE ASC, p.id ASC",
+    "title_desc": "p.name COLLATE NOCASE DESC, p.id DESC",
+    "rating_desc": "(p.our_rating IS NULL) ASC, p.our_rating DESC, p.name COLLATE NOCASE ASC, p.id ASC",
+    "rating_asc": "(p.our_rating IS NULL) ASC, p.our_rating ASC, p.name COLLATE NOCASE ASC, p.id ASC",
+}
+
+
+def list_places_page(
     conn: sqlite3.Connection,
     query: str | None = None,
     tag_ids: list[int] | None = None,
     status: str = "published",
     city: str | None = None,
-) -> list[PlaceCard]:
-    """List place cards, filtered by FTS search, tag ids (AND), and/or an exact city."""
+    sort: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> tuple[list[PlaceCard], int]:
+    """One page of place cards plus the TOTAL matching (for "21-40 of 87").
+
+    Filters: FTS search, tag ids (AND), and/or an exact city. `sort` is one of _SORTS or
+    "relevance" (bm25, only while searching); with no `sort` the original order (most recently
+    updated first) is kept, so existing callers are unchanged. `limit=None` = everything."""
     tag_ids = tag_ids or []
     where = ["p.status = ?"]
     params: list = [status]
     joins = ""
     order = "p.updated_at DESC, p.id DESC"
+    searching = bool(query and query.strip())
 
-    if query and query.strip():
+    if searching:
         joins += " JOIN place_fts f ON f.rowid = p.id"
         where.append("place_fts MATCH ?")
         params.append(_build_fts_query(query))
@@ -293,9 +315,37 @@ def list_places(
         params.extend(tag_ids)
         params.append(len(tag_ids))
 
-    sql = f"SELECT p.* FROM place p{joins} WHERE {' AND '.join(where)} ORDER BY {order}"
-    rows = conn.execute(sql, params).fetchall()
-    return [_card_from_row(conn, row) for row in rows]
+    if sort in _SORTS:
+        order = _SORTS[sort]
+    elif sort == "relevance" and not searching:
+        order = _SORTS["newest"]  # nothing to rank by without a query
+
+    where_sql = " AND ".join(where)
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM place p{joins} WHERE {where_sql}", params
+    ).fetchone()[0]
+
+    sql = f"SELECT p.* FROM place p{joins} WHERE {where_sql} ORDER BY {order}"
+    page_params = list(params)
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        page_params += [limit, max(0, offset)]
+    elif offset:
+        sql += " LIMIT -1 OFFSET ?"
+        page_params.append(max(0, offset))
+    rows = conn.execute(sql, page_params).fetchall()
+    return [_card_from_row(conn, row) for row in rows], total
+
+
+def list_places(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    tag_ids: list[int] | None = None,
+    status: str = "published",
+    city: str | None = None,
+) -> list[PlaceCard]:
+    """Every matching place card (no paging) — see list_places_page."""
+    return list_places_page(conn, query, tag_ids, status, city)[0]
 
 
 def _build_fts_query(query: str) -> str:

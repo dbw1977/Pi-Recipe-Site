@@ -1,40 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, FeaturedResponse, RecipeCard, RecipeSort, TagCategory } from '../api';
+import { api, FeaturedResponse, RecipeCard, TagCategory } from '../api';
+import Pager from '../components/Pager';
+import SortSelect from '../components/SortSelect';
 import StarRating from '../components/StarRating';
-import {
-  clampPage,
-  PAGE_SIZES,
-  PageSize,
-  pageCount,
-  parsePageSize,
-  parseSort,
-  rangeText,
-  SORT_OPTIONS,
-} from '../lib/paging';
+import { clampPage } from '../lib/paging';
+import { useListPaging } from '../lib/useListPaging';
 
 // A small hero color rotation so image-less cards still look intentional, not broken.
 const PLACEHOLDER_TONES = ['#e9ddcb', '#e6d3c4', '#dfe3d3', '#ead9d4', '#e2ddd0'];
-
-// Sort + page size are per-device conveniences, so they live in localStorage. Every access is
-// guarded: private windows / blocked storage must never break the library.
-function loadPref(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function savePref(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    /* not persisted — the choice still applies for this visit */
-  }
-}
-
-const selectCls =
-  'rounded-lg border-0 bg-white py-1.5 pl-2.5 pr-7 text-sm text-bark shadow-sm ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-ember/40';
 
 export default function Library() {
   const [query, setQuery] = useState('');
@@ -42,28 +16,20 @@ export default function Library() {
   const [activeTags, setActiveTags] = useState<number[]>([]);
   const [cards, setCards] = useState<RecipeCard[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0); // 0-based
-  const [pageSize, setPageSize] = useState<PageSize>(() => parsePageSize(loadPref('lib.pageSize')));
-  const [sortChoice, setSortChoice] = useState(() => parseSort(loadPref('lib.sort')));
-  // While searching, "Best match" leads until the person picks a sort of their own.
-  const [pickedSort, setPickedSort] = useState(false);
   const [categories, setCategories] = useState<TagCategory[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [featured, setFeatured] = useState<FeaturedResponse | null>(null);
 
   const searching = !!debounced;
-  const sort: RecipeSort = searching && !pickedSort ? 'relevance' : sortChoice;
+  const { page, setPage, pageSize, sort, resetPage, changeSort, changeSize, goToPage } =
+    useListPaging('lib', searching);
 
   // Debounce the search box (spec §9: live, debounced).
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 220);
     return () => clearTimeout(t);
   }, [query]);
-
-  useEffect(() => {
-    if (!debounced) setPickedSort(false);
-  }, [debounced]);
 
   useEffect(() => {
     api.listTags().then(setCategories).catch(() => setCategories([]));
@@ -106,37 +72,16 @@ export default function Library() {
 
   // Any change to what's being listed starts again from the first page.
   const toggleTag = (id: number) => {
-    setPage(0);
+    resetPage();
     setActiveTags((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
   };
   const clearTags = () => {
-    setPage(0);
+    resetPage();
     setActiveTags([]);
   };
   const changeQuery = (v: string) => {
-    setPage(0);
+    resetPage();
     setQuery(v);
-  };
-  const changeSort = (v: RecipeSort) => {
-    setPage(0);
-    if (v === 'relevance') {
-      setPickedSort(false);
-      return;
-    }
-    setSortChoice(v);
-    // Only a sort chosen *during* a search overrides "Best match"; picking one while browsing
-    // is just the new default and must not pre-empt relevance on the next search.
-    setPickedSort(searching);
-    savePref('lib.sort', v);
-  };
-  const changeSize = (n: PageSize) => {
-    setPage(0);
-    setPageSize(n);
-    savePref('lib.pageSize', String(n));
-  };
-  const goToPage = (p: number) => {
-    setPage(p);
-    window.scrollTo({ top: 0 });
   };
 
   const activeTagCount = activeTags.length;
@@ -145,7 +90,6 @@ export default function Library() {
     [categories],
   );
 
-  const pages = pageCount(total, pageSize);
   const showHero = !debounced && activeTagCount === 0 && page === 0 && featured?.recipe;
 
   return (
@@ -175,21 +119,7 @@ export default function Library() {
 
       {/* Sort + result count */}
       <div className="mb-4 flex items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-sm text-muted">
-          Sort
-          <select
-            value={sort}
-            onChange={(e) => changeSort(e.target.value as RecipeSort)}
-            className={selectCls}
-          >
-            {searching && <option value="relevance">Best match</option>}
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SortSelect value={sort} onChange={changeSort} searching={searching} />
         {!loading && total > 0 && (
           <span className="text-sm tabular-nums text-muted">
             {total} recipe{total === 1 ? '' : 's'}
@@ -201,10 +131,7 @@ export default function Library() {
       {filtersOpen && (
         <div className="card mb-4 p-4">
           {activeTagCount > 0 && (
-            <button
-              onClick={clearTags}
-              className="mb-3 text-sm font-medium text-ember underline"
-            >
+            <button onClick={clearTags} className="mb-3 text-sm font-medium text-ember underline">
               Clear {activeTagCount} filter{activeTagCount > 1 ? 's' : ''}
             </button>
           )}
@@ -249,43 +176,15 @@ export default function Library() {
         </div>
       )}
 
-      {/* Pager — only once there's more than the smallest page size to page through */}
-      {!loading && total > PAGE_SIZES[0] && (
-        <nav className="mt-6 flex flex-col items-center gap-3" aria-label="Pages">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => goToPage(page - 1)}
-              disabled={page === 0}
-              className="btn-ghost !py-2 disabled:opacity-40"
-            >
-              ‹ Prev
-            </button>
-            <span className="min-w-[7.5rem] text-center text-sm tabular-nums text-muted">
-              {rangeText(total, page, pageSize)}
-            </span>
-            <button
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= pages - 1}
-              className="btn-ghost !py-2 disabled:opacity-40"
-            >
-              Next ›
-            </button>
-          </div>
-          <label className="flex items-center gap-2 text-sm text-muted">
-            Per page
-            <select
-              value={pageSize}
-              onChange={(e) => changeSize(parsePageSize(e.target.value))}
-              className={selectCls}
-            >
-              {PAGE_SIZES.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
-        </nav>
+      {!loading && (
+        <Pager
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          noun="recipe"
+          onPage={goToPage}
+          onSize={changeSize}
+        />
       )}
     </div>
   );

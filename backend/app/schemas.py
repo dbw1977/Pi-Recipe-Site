@@ -1,9 +1,16 @@
 """Request/response models. Ingredients are always structured (CLAUDE.md rule 5)."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+# Sort orders the Cook and Eat Out libraries accept (?sort=). "relevance" only means
+# something while searching. Shared so the two collections can't drift apart.
+ListSort = Literal[
+    "relevance", "newest", "oldest", "title_asc", "title_desc", "rating_desc", "rating_asc"
+]
 
 
 # --------------------------------------------------------------------------- #

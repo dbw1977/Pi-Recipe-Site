@@ -34,6 +34,7 @@ describe('rangeText', () => {
     expect(rangeText(87, 4, 20)).toBe('81–87 of 87'); // last page is short
     expect(rangeText(87, 1, 50)).toBe('51–87 of 87');
     expect(rangeText(0, 0, 20)).toBe('0 recipes');
+    expect(rangeText(0, 0, 20, 'place')).toBe('0 places');
   });
 });
 

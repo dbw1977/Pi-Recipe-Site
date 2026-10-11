@@ -5,29 +5,43 @@ draft on import and are approved to publish. Existing recipe endpoints are untou
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from .. import config, crud_places
 from ..db import get_connection, transaction
 from ..extraction.duplicates import find_duplicate
-from ..schemas import PlaceCard, PlaceIn, PlaceOut
+from ..schemas import ListSort, PlaceCard, PlaceIn, PlaceOut
 
 router = APIRouter(prefix="/api/places", tags=["places"])
 
 
 @router.get("", response_model=list[PlaceCard])
 def list_places(
+    response: Response,
     q: str | None = Query(default=None),
     tags: str | None = Query(default=None, description="Comma-separated tag ids; place must have ALL"),
     city: str | None = Query(default=None, description="Exact city match"),
     status: str = Query(default="published"),
+    sort: Optional[ListSort] = Query(
+        default=None, description="Order; omitted = most recently updated first"),
+    limit: Optional[int] = Query(default=None, ge=1, le=200, description="Page size; omitted = all"),
+    offset: int = Query(default=0, ge=0),
 ):
+    """Place cards. The total matching count (ignoring limit/offset) is sent in the
+    `X-Total-Count` header so the body stays a plain list for every existing caller."""
     tag_ids = [int(t) for t in tags.split(",") if t.strip().isdigit()] if tags else []
     conn = get_connection()
     try:
-        return crud_places.list_places(conn, query=q, tag_ids=tag_ids, status=status, city=city)
+        cards, total = crud_places.list_places_page(
+            conn, query=q, tag_ids=tag_ids, status=status, city=city,
+            sort=sort, limit=limit, offset=offset,
+        )
     finally:
         conn.close()
+    response.headers["X-Total-Count"] = str(total)
+    return cards
 
 
 @router.get("/meta")

@@ -1,7 +1,7 @@
 """Recipe CRUD + library/search + AI variations (Chunk F)."""
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
@@ -12,7 +12,7 @@ from ..extraction import claude
 from ..extraction.draft import to_recipe_input
 from ..extraction.errors import ExtractionError, FeatureUnavailable
 from ..extraction.tags import load_tag_index
-from ..schemas import RecipeCard, RecipeIn, RecipeOut
+from ..schemas import ListSort, RecipeCard, RecipeIn, RecipeOut
 
 router = APIRouter(prefix="/api/recipes", tags=["recipes"])
 
@@ -23,8 +23,7 @@ def list_recipes(
     q: str | None = Query(default=None, description="Full-text search (title, ingredients, tags, source, notes)"),
     tags: str | None = Query(default=None, description="Comma-separated tag ids; recipe must have ALL of them"),
     status: str = Query(default="published"),
-    sort: Optional[Literal["relevance", "newest", "oldest", "title_asc", "title_desc",
-                           "rating_desc", "rating_asc"]] = Query(
+    sort: Optional[ListSort] = Query(
         default=None, description="Order; omitted = most recently updated first"),
     limit: Optional[int] = Query(default=None, ge=1, le=200, description="Page size; omitted = all"),
     offset: int = Query(default=0, ge=0),
