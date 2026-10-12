@@ -1,19 +1,7 @@
-import { useEffect, useState } from 'react';
-import { api, BackupEntry, BackupSettings, BackupStatus, GoogleStatus, TagCategory } from '../api';
-
-function daysSince(iso: string | undefined): number | null {
-  if (!iso) return null;
-  const t = Date.parse(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
-  if (Number.isNaN(t)) return null;
-  return Math.floor((Date.now() - t) / 86_400_000);
-}
-
-function fmtSize(n: number | null): string {
-  if (!n) return '';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
+import { useEffect, useRef, useState } from 'react';
+import { api, BackupEntry, BackupSettings, BackupStatus, GoogleStatus, RestorePreview, TagCategory } from '../api';
+import AdminHelp from '../components/AdminHelp';
+import { count, daysSince, fmtSize } from '../lib/format';
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -73,32 +61,31 @@ function Check({ checked, onChange, children }: { checked: boolean; onChange: (v
   );
 }
 
-function BackupCard() {
+/** One backup status for the whole Settings page; polls while a backup or restore is running. */
+function useBackupStatus() {
   const [status, setStatus] = useState<BackupStatus | null>(null);
+  const reload = () => api.backupStatus().then(setStatus).catch(() => setStatus(null));
+  useEffect(() => {
+    reload();
+  }, []);
+  useEffect(() => {
+    if (!status?.running) return;
+    const t = setInterval(reload, 2000);
+    return () => clearInterval(t);
+  }, [status?.running]);
+  return { status, setStatus, reload };
+}
+
+function BackupCard({ status, setStatus }: { status: BackupStatus | null; setStatus: (s: BackupStatus) => void }) {
   const [form, setForm] = useState<BackupSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () =>
-    api
-      .backupStatus()
-      .then((st) => {
-        setStatus(st);
-        setForm((f) => f ?? st.settings); // never overwrite what's being typed
-      })
-      .catch(() => setStatus(null));
-
+  // Fill the form once the first status arrives; never overwrite what's being typed.
   useEffect(() => {
-    load();
-  }, []);
-
-  // While a backup runs, follow its progress.
-  useEffect(() => {
-    if (!status?.running) return;
-    const t = setInterval(load, 2000);
-    return () => clearInterval(t);
-  }, [status?.running]);
+    if (status && !form) setForm(status.settings);
+  }, [status]);
 
   if (!status || !form) return (
     <section className="card p-4">
@@ -240,12 +227,12 @@ function BackupCard() {
         </button>
         <button onClick={backUpNow} disabled={dirty || status.running || !anyDestination} className="btn-ghost disabled:opacity-40"
           title={dirty ? 'Save your changes first' : undefined}>
-          {status.running ? 'Backing up…' : 'Back up now'}
+          {status.running ? (status.kind === 'restore' ? 'Restore in progress…' : 'Backing up…') : 'Back up now'}
         </button>
         {dirty && <span className="text-xs text-muted">Save to apply your changes.</span>}
         {notice && !dirty && <span className="text-sm text-herb">{notice}</span>}
       </div>
-      {status.running && (
+      {status.running && status.kind === 'backup' && (
         <p className="mt-2 text-sm text-muted" role="status" aria-live="polite">⏳ {status.step || 'Working…'}</p>
       )}
       {error && <div className="mt-2 rounded-lg bg-ember/10 px-3 py-2 text-sm text-emberDark">{error}</div>}
@@ -260,31 +247,210 @@ function BackupCard() {
         <BackupRow label="Google Drive" entry={status.drive} staleDays={s.enabled ? 9 : null} />
       )}
 
-      <details className="mt-4 text-sm">
-        <summary className="cursor-pointer font-medium text-ember">Restoring after a hardware failure</summary>
-        <div className="mt-2 space-y-2 text-muted">
-          <p>On the new Pi, install the app (README), then stop it and restore. Test this once — a backup you’ve never restored is only a hope.</p>
-          <pre className="overflow-x-auto rounded-lg bg-cream p-3 text-xs text-bark">{`sudo systemctl stop recipes
-cd ~/pi-recipe-site/backend && . .venv/bin/activate
-# from a folder / NAS / USB:
-python -m app.backup restore /path/to/recipes-backup.zip --yes
-# or from Google Drive (connect Google in Settings first):
-python -m app.backup restore-drive --yes
-sudo systemctl start recipes`}</pre>
-          <p>Your Google connection and <code>.env</code> keys aren’t in the backup (they’re secrets) — reconnect Google and re-enter the keys afterwards.</p>
+      <p className="mt-4 text-xs text-muted">
+        To get a library back (new Pi, or going back to an earlier backup), use <strong>Restore from a backup</strong> just below.
+      </p>
+    </section>
+  );
+}
+
+function RestoreCard({ status, setStatus, reload }: {
+  status: BackupStatus | null;
+  setStatus: (s: BackupStatus) => void;
+  reload: () => void;
+}) {
+  const [preview, setPreview] = useState<RestorePreview | null>(null);
+  const [withPhotos, setWithPhotos] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null); // what we're doing before the restore itself
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [watching, setWatching] = useState(false); // true once a restore started in this visit
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // A backup staged earlier (before a reload) is still waiting for confirmation.
+  useEffect(() => {
+    api.restoreStaged().then((p) => p && setPreview(p)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (preview) setWithPhotos(preview.includes_media);
+  }, [preview]);
+
+  const restoring = status?.running && status.kind === 'restore';
+  useEffect(() => {
+    if (restoring) setWatching(true); // also covers a restore started from another tab
+  }, [restoring]);
+
+  const result = watching && !status?.running ? status?.restore_result ?? null : null;
+  useEffect(() => {
+    if (result?.ok) {
+      const t = setTimeout(() => window.location.reload(), 4000); // every screen's data just changed
+      return () => clearTimeout(t);
+    }
+  }, [result?.ok]);
+
+  const stage = async (what: string, fn: () => Promise<RestorePreview>) => {
+    setBusy(what);
+    setError(null);
+    setProgress(null);
+    try {
+      setPreview(await fn());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+      setProgress(null);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const cancel = async () => {
+    setError(null);
+    try {
+      await api.restoreDiscard();
+    } catch {
+      /* already gone */
+    }
+    setPreview(null);
+  };
+
+  const apply = async () => {
+    if (!preview) return;
+    const ok = confirm(
+      `Replace the library (${count(preview.current.recipes, 'recipe')}, ${count(preview.current.places, 'place')}) with this backup ` +
+        `(${count(preview.recipes, 'recipe')}, ${count(preview.places, 'place')})?\n\nA copy of the current library is saved on the Pi first.`,
+    );
+    if (!ok) return;
+    setError(null);
+    setWatching(true);
+    try {
+      setStatus(await api.restoreApply(withPhotos));
+      setPreview(null);
+    } catch (e) {
+      setWatching(false);
+      setError((e as Error).message);
+    }
+  };
+
+  const lb = status?.local_backup;
+  const googleOk = status?.google.authorized;
+  const idle = !busy && !preview && !restoring && !result;
+  const blocked = !!status?.running; // a backup is running
+
+  return (
+    <section className="card p-4">
+      <h2 className="text-lg font-semibold">Restore from a backup</h2>
+      <p className="mb-3 mt-1 text-sm text-muted">
+        Use this on a new Pi, or to go back to an earlier backup. You’ll see what’s inside and confirm
+        before anything is replaced.
+      </p>
+
+      {error && <div className="mb-3 rounded-lg bg-ember/10 px-3 py-2 text-sm text-emberDark">{error}</div>}
+
+      {idle && (
+        <div className="space-y-2">
+          <input ref={fileRef} type="file" accept=".zip,.db" className="hidden" id="restore-file"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) stage('Uploading…', () => api.uploadRestoreFile(f, setProgress));
+            }} />
+          <button className="btn-ghost w-full justify-center disabled:opacity-40" disabled={blocked}
+            onClick={() => fileRef.current?.click()}>
+            Choose a backup file…
+          </button>
+          {lb && (
+            <button className="btn-ghost w-full justify-center disabled:opacity-40" disabled={blocked}
+              onClick={() => stage('Reading the saved backup…', () => api.restoreStage('folder'))}>
+              From the saved folder · {new Date(lb.modified).toLocaleDateString()} · {fmtSize(lb.size_bytes)}
+            </button>
+          )}
+          {googleOk && (
+            <button className="btn-ghost w-full justify-center disabled:opacity-40" disabled={blocked}
+              onClick={() => stage('Downloading from Google Drive…', () => api.restoreStage('drive'))}>
+              From Google Drive
+            </button>
+          )}
+          {!googleOk && <p className="text-xs text-muted">To restore from Google Drive, connect Google in the card above first.</p>}
+          {blocked && <p className="text-xs text-muted">A backup is running — you can restore when it finishes.</p>}
         </div>
-      </details>
+      )}
+
+      {busy && (
+        <div role="status" aria-live="polite" className="text-sm text-muted">
+          ⏳ {busy}
+          {progress != null && <> {progress}%</>}
+          {progress != null && (
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/10">
+              <div className="h-full bg-ember transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {preview && !restoring && (
+        <div className="space-y-3">
+          <div className="rounded-lg bg-cream px-3 py-3 text-sm">
+            <div className="font-medium">
+              Backup from {new Date(preview.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+              <span className="font-normal text-muted"> · {preview.source}</span>
+            </div>
+            <div className="mt-1">
+              {count(preview.recipes, 'recipe')} · {count(preview.places, 'place')}
+              {preview.includes_media ? ` · ${count(preview.media_files, 'photo')} (${fmtSize(preview.media_bytes)})` : ' · no photos'}
+            </div>
+            <div className="mt-1 text-muted">
+              Your library now: {count(preview.current.recipes, 'recipe')} · {count(preview.current.places, 'place')}
+            </div>
+          </div>
+          {preview.includes_media ? (
+            <Check checked={withPhotos} onChange={setWithPhotos}>Also restore the photos</Check>
+          ) : (
+            <p className="text-xs text-muted">This backup has no photos — the photos you have now are left as they are.</p>
+          )}
+          <p className="rounded-lg bg-ember/10 px-3 py-2 text-sm text-emberDark">
+            This replaces everything in the library with this backup. A copy of your current library is saved
+            on the Pi first.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={apply} className="btn-primary">Restore this backup</button>
+            <button onClick={cancel} className="btn-ghost">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {restoring && (
+        <p className="text-sm text-muted" role="status" aria-live="polite">⏳ {status?.step || 'Restoring…'}</p>
+      )}
+
+      {result && (
+        result.ok ? (
+          <div className="rounded-lg bg-herb/10 px-3 py-3 text-sm text-herb">
+            ✓ Restored {count(result.recipes ?? 0, 'recipe')}, {count(result.places ?? 0, 'place')}
+            {result.photos_restored ? ` and ${count(result.photos_restored, 'photo')}` : ''}. Reloading…
+            <div className="mt-2">
+              <button onClick={() => window.location.reload()} className="btn-ghost !py-1.5 text-sm">Reload now</button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="rounded-lg bg-ember/10 px-3 py-2 text-sm text-emberDark">Restore failed: {result.message}</div>
+            <button onClick={() => { setWatching(false); reload(); }} className="btn-ghost text-sm">OK</button>
+          </div>
+        )
+      )}
     </section>
   );
 }
 
 export default function Settings() {
+  const { status, setStatus, reload } = useBackupStatus();
   return (
     <div className="space-y-4">
       <h1 className="font-display text-2xl font-semibold">Settings</h1>
 
       <GoogleCard />
-      <BackupCard />
+      <BackupCard status={status} setStatus={setStatus} />
+      <RestoreCard status={status} setStatus={setStatus} reload={reload} />
+      <AdminHelp backup={status} />
       <TagManager />
     </div>
   );
@@ -342,7 +508,7 @@ function GoogleCard() {
     <section className="card p-4">
       <h2 className="text-lg font-semibold">Google account</h2>
       <p className="mb-2 mt-1 text-sm text-muted">
-        Connect once to enable <strong>Google Drive import</strong> (bulk-load a recipes folder) and
+        Connect once to enable <strong>Google Drive import</strong> (bulk-load a recipes folder) and{' '}
         <strong>backing up to Google Drive</strong> (choose it in Backups below). One sign-in covers both.
       </p>
       {error && <div className="mb-2 rounded-lg bg-ember/10 px-3 py-2 text-sm text-emberDark">{error}</div>}

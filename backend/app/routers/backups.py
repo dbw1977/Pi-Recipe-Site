@@ -4,10 +4,14 @@ The weekly schedule runs inside the app (backup_scheduler); "Back up now" and th
 share one background runner, so the page just polls /status while a run is in flight."""
 from __future__ import annotations
 
-from datetime import datetime
+import os
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from .. import backup, backup_settings, config
@@ -41,6 +45,22 @@ def _media_estimate(settings: backup_settings.BackupSettings) -> dict:
     return value
 
 
+def _local_backup(s: backup_settings.BackupSettings) -> dict | None:
+    """The backup file sitting in the saved folder, if any — offered as a restore source."""
+    if not s.local_dir:
+        return None
+    f = Path(s.local_dir).expanduser() / backup.ARCHIVE_NAME
+    try:
+        st = f.stat()
+    except OSError:
+        return None
+    return {
+        "modified": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(timespec="seconds"),
+        "size_bytes": st.st_size,
+        "dir": s.local_dir,
+    }
+
+
 def _status() -> dict:
     conn = get_connection()
     try:
@@ -64,7 +84,10 @@ def _status() -> dict:
         "local": local,
         "drive": drive_last,
         "running": running["running"],
+        "kind": running["kind"],  # "backup" | "restore" while running
         "step": running["step"],
+        "restore_result": running["restore_result"],
+        "local_backup": _local_backup(s),
         "next_run": (
             backup_settings.next_scheduled(datetime.now(), s.day, s.hour).isoformat(timespec="minutes")
             if s.enabled and (s.local_enabled or s.drive_enabled) else None
@@ -135,4 +158,124 @@ def run(payload: RunIn):
 
     if not backup.start_background(targets):
         raise HTTPException(status_code=409, detail="A backup is already running.")
+    return _status()
+
+
+# --------------------------------------------------------------------------- #
+# Restore from inside the app: stage -> check/preview -> (confirm) -> apply
+# --------------------------------------------------------------------------- #
+_staged_source = {"label": "file"}
+
+
+def _preview(label: str | None = None) -> dict:
+    """What's in the staged backup, next to what the library holds right now."""
+    if label:
+        _staged_source["label"] = label
+    return {**backup.inspect_backup(backup.staged_file()), "source": _staged_source["label"],
+            "current": backup.current_counts()}
+
+
+def _refuse_if_busy() -> None:
+    if backup.current()["running"]:
+        raise HTTPException(status_code=409, detail="A backup or restore is running — wait for it to finish.")
+
+
+@router.post("/restore/upload")
+async def restore_upload(request: Request):
+    """Receive a backup file as the raw request body (not multipart: a backup with photos can be
+    hundreds of MB, and this streams it straight to disk). Checked before anything is replaced."""
+    _refuse_if_busy()
+    staging = backup.staging_dir()
+    declared = int(request.headers.get("content-length") or 0)
+    if declared and shutil.disk_usage(staging).free < declared * 1.1 + 50_000_000:
+        raise HTTPException(status_code=507, detail=(
+            f"Not enough free space on the Pi for a {declared // 1_000_000} MB upload "
+            f"({shutil.disk_usage(staging).free // 1_000_000} MB free)."))
+    backup.clear_staged()
+    part = staging / "incoming.part"
+    try:
+        with open(part, "wb") as f:
+            async for chunk in request.stream():
+                f.write(chunk)
+        os.replace(part, backup.staged_file())
+        preview = await run_in_threadpool(_preview, "uploaded file")
+    except backup.BackupError as e:
+        backup.clear_staged()
+        raise HTTPException(status_code=400, detail=str(e))
+    except OSError as e:
+        backup.clear_staged()
+        raise HTTPException(status_code=507, detail=f"Couldn't save the upload: {e.strerror or e}")
+    except Exception:
+        backup.clear_staged()  # e.g. the phone dropped off wifi mid-upload
+        raise
+    return preview
+
+
+class StageIn(BaseModel):
+    source: str  # 'folder' | 'drive'
+
+
+@router.post("/restore/stage")
+def restore_stage(payload: StageIn):
+    """Fetch the backup already saved in the chosen folder, or from Google Drive, for review."""
+    _refuse_if_busy()
+    conn = get_connection()
+    try:
+        s = backup_settings.load(conn)
+    finally:
+        conn.close()
+    try:
+        if payload.source == "folder":
+            src = Path(s.local_dir).expanduser() / backup.ARCHIVE_NAME
+            if not src.is_file():
+                raise HTTPException(status_code=404, detail=f"No {backup.ARCHIVE_NAME} found in {s.local_dir}.")
+            backup.clear_staged()
+            shutil.copyfile(src, backup.staged_file())
+            return _preview("saved folder")
+        if payload.source == "drive":
+            if not drive.authorized():
+                raise HTTPException(status_code=400, detail="Connect Google first (card above), then restore from Drive.")
+            backup.clear_staged()
+            downloaded = backup.fetch_from_drive(backup.staging_dir())
+            os.replace(downloaded, backup.staged_file())
+            return _preview("Google Drive")
+    except backup.BackupError as e:
+        backup.clear_staged()
+        raise HTTPException(status_code=400, detail=str(e))
+    except OSError as e:
+        backup.clear_staged()
+        raise HTTPException(status_code=507, detail=f"Couldn't copy the backup: {e.strerror or e}")
+    raise HTTPException(status_code=400, detail="source must be folder|drive")
+
+
+@router.get("/restore/staged")
+def restore_staged():
+    """The backup waiting for confirmation, if any (so a page reload doesn't lose it)."""
+    if not backup.staged_file().is_file():
+        return None
+    try:
+        return _preview()
+    except backup.BackupError:
+        backup.clear_staged()
+        return None
+
+
+@router.delete("/restore/staged", status_code=204)
+def restore_discard():
+    _refuse_if_busy()
+    backup.clear_staged()
+    return None
+
+
+class ApplyIn(BaseModel):
+    include_media: bool = True
+
+
+@router.post("/restore/apply")
+def restore_apply(payload: ApplyIn):
+    """Replace the library with the staged backup. Runs in the background; poll /status."""
+    if not backup.staged_file().is_file():
+        raise HTTPException(status_code=400, detail="Choose a backup to restore first.")
+    if not backup.start_restore(backup.staged_file(), payload.include_media):
+        raise HTTPException(status_code=409, detail="A backup or restore is running — wait for it to finish.")
     return _status()

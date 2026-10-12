@@ -153,12 +153,37 @@ export interface BackupSettings {
   hour: number; // 0-23, the Pi's local time
 }
 
+export interface RestorePreview {
+  kind: 'zip' | 'db'; // 'db' = an old database-only backup (no photos)
+  created_at: string;
+  size_bytes: number;
+  recipes: number;
+  places: number;
+  media_files: number;
+  media_bytes: number;
+  includes_media: boolean;
+  source: string; // "uploaded file" | "saved folder" | "Google Drive"
+  current: { recipes: number; places: number }; // what the library holds right now
+}
+
+export interface RestoreResult {
+  ok: boolean;
+  message?: string; // when !ok
+  recipes?: number;
+  places?: number;
+  photos_restored?: number;
+  safety_copy?: string | null;
+}
+
 export interface BackupStatus {
   settings: BackupSettings;
   day_names: string[];
   local: BackupEntry | null;
   drive: BackupEntry | null;
   running: boolean;
+  kind: 'backup' | 'restore' | null;
+  restore_result: RestoreResult | null;
+  local_backup: { modified: string; size_bytes: number; dir: string } | null; // the file in the saved folder
   step: string; // live progress while running, e.g. "Packing photos… 12 of 80"
   next_run: string | null; // local time, ISO minutes
   media: { files: number; bytes: number } | null; // null while a backup is running
@@ -595,6 +620,40 @@ export const api = {
   },
   saveBackupSettings(patch: Partial<BackupSettings>): Promise<BackupStatus> {
     return req<BackupStatus>('/api/backups/settings', { method: 'PUT', body: JSON.stringify(patch) });
+  },
+  // --- Restore from inside the app: stage -> preview -> confirm -> apply ---
+  restoreStaged(): Promise<RestorePreview | null> {
+    return req<RestorePreview | null>('/api/backups/restore/staged');
+  },
+  restoreStage(source: 'folder' | 'drive'): Promise<RestorePreview> {
+    return req<RestorePreview>('/api/backups/restore/stage', { method: 'POST', body: JSON.stringify({ source }) });
+  },
+  restoreDiscard(): Promise<void> {
+    return req<void>('/api/backups/restore/staged', { method: 'DELETE' });
+  },
+  restoreApply(includeMedia: boolean): Promise<BackupStatus> {
+    return req<BackupStatus>('/api/backups/restore/apply', { method: 'POST', body: JSON.stringify({ include_media: includeMedia }) });
+  },
+  /** Sends the file as the raw body (a backup with photos can be hundreds of MB) with progress. */
+  uploadRestoreFile(file: File, onProgress: (percent: number) => void): Promise<RestorePreview> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/backups/restore/upload');
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100));
+      xhr.onload = () => {
+        let body: any = null;
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          /* not JSON */
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(body as RestorePreview);
+        else reject(new Error(body?.detail ?? `Upload failed (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new Error('The upload was interrupted — check your wifi and try again.'));
+      xhr.send(file);
+    });
   },
   /** Starts a backup of every destination that's switched on; poll backupStatus() for progress. */
   runBackup(): Promise<BackupStatus> {

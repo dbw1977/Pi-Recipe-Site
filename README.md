@@ -258,28 +258,45 @@ Everything is chosen on **Settings → Backups** — no `.env` or systemd editin
 ### Restore (after a hardware failure)
 
 Photos live outside the database, which is why the backup includes them. On the replacement Pi:
-install the app (this README), then:
+install the app (this README), open **Settings**, and use **Restore from a backup**:
+
+1. Pick the backup — **upload the file** (e.g. downloaded from Drive or copied off the NAS),
+   or take it from **the saved folder**, or **Google Drive** (connect Google first).
+2. The app checks it and shows **what's inside next to what you have now** — recipes, places,
+   photos. Nothing is replaced yet.
+3. Confirm. The library is **replaced** with the backup (not merged), photos are unpacked, and
+   the page reloads. It runs in the background with live progress, and refuses to start while a
+   backup is running.
+
+Safety: before replacing anything the app saves your current library next to the database as
+`before-restore-<time>.db` (the newest 3 are kept). A backup made by a **newer** app is refused
+(update first with `scripts/update.sh`); an older one is fine — missing tables are added. Bad or
+non-backup files are refused with a message and nothing is touched. Uploads are streamed to disk
+and checked for free space first.
+
+Not in the backup (they're secrets): `.env` and your Google connection. Reconnect Google in
+Settings and re-enter the keys afterwards. **Test a restore once, on purpose** — a backup you've
+never restored is a hope, not a backup.
+
+**From the command line** (if the app can't start, or to undo a restore): stop the app, then
 
 ```bash
 sudo systemctl stop recipes
 cd ~/pi-recipe-site/backend && . .venv/bin/activate
-
-# from a folder / NAS / USB:
-python -m app.backup restore /path/to/recipes-backup.zip --yes
-# or straight from Google Drive (connect Google in Settings first, using the same Google Cloud client):
-python -m app.backup restore-drive --yes
-
+python -m app.backup restore /path/to/recipes-backup.zip --yes   # or a before-restore-….db to undo
+python -m app.backup restore-drive --yes                          # newest backup from Google Drive
 sudo systemctl start recipes
 ```
 
-- Add `--no-media` to restore only the database.
-- Your current database is kept next to the live one as `recipes.db.before-restore-<time>`, so a
-  mistaken restore can be undone.
-- It refuses a backup made by a **newer** version of the app (update first with
-  `scripts/update.sh`); older backups are fine — new migrations apply on start.
-- Not in the backup (they're secrets): `.env` and your Google connection. Reconnect Google in
-  Settings and re-enter the keys.
-- **Test a restore once, on purpose** — a backup you've never restored is a hope, not a backup.
+`--no-media` restores only the database.
+
+### Admin help (Settings)
+
+**Settings → Admin help** shows what's working right now (AI key, video/voice tools, Google,
+backup health — with a **What to do** link on anything that isn't) and short answers for the
+things an admin otherwise has to remember: updating the app, backups and restoring, what
+imports work (and what to do when a site blocks them), the Google connection, "why is this
+greyed out", where files live, and the handy commands. Commands have a one-tap **Copy**.
 
 The same engine is available from the command line: `python -m app.backup local|drive|both`
 (uses the destinations saved in Settings).

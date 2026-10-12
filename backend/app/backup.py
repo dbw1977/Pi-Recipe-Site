@@ -53,11 +53,22 @@ class BackupBusy(BackupError):
 # Progress shared with the UI while a run is in flight
 # --------------------------------------------------------------------------- #
 _lock = threading.Lock()
-_state: dict = {"running": False, "step": "", "targets": [], "started_at": None}
+# kind: "backup" | "restore" while running. restore_result keeps the last in-app restore's
+# outcome so the page can show it after the work finishes (and after a reload).
+_state: dict = {"running": False, "kind": None, "step": "", "targets": [], "started_at": None, "restore_result": None}
 
 
 def current() -> dict:
     return dict(_state)
+
+
+def _begin(kind: str, targets: set[str] | None = None) -> None:
+    _state.update(running=True, kind=kind, step="Starting…", targets=sorted(targets or ()),
+                  started_at=datetime.now().isoformat(timespec="seconds"))
+
+
+def _end() -> None:
+    _state.update(running=False, kind=None, step="", targets=[])
 
 
 def _step(message: str) -> None:
@@ -389,11 +400,11 @@ def run_now(targets: set[str]) -> dict[str, Result]:
     """Run synchronously (CLI, tests). Raises BackupBusy if another run is in flight."""
     if not _lock.acquire(blocking=False):
         raise BackupBusy("A backup is already running.")
-    _state.update(running=True, step="Starting…", targets=sorted(targets), started_at=datetime.now().isoformat(timespec="seconds"))
+    _begin("backup", targets)
     try:
         return _run(targets)
     finally:
-        _state.update(running=False, step="", targets=[])
+        _end()
         _lock.release()
 
 
@@ -402,7 +413,7 @@ def start_background(targets: set[str]) -> bool:
     progress). False when a run is already in flight."""
     if not _lock.acquire(blocking=False):
         return False
-    _state.update(running=True, step="Starting…", targets=sorted(targets), started_at=datetime.now().isoformat(timespec="seconds"))
+    _begin("backup", targets)
 
     def worker() -> None:
         try:
@@ -410,7 +421,7 @@ def start_background(targets: set[str]) -> bool:
         except Exception as e:  # _run records per-target failures; this is a last-resort net
             print(f"(warning) backup crashed: {e}", file=sys.stderr)
         finally:
-            _state.update(running=False, step="", targets=[])
+            _end()
             _lock.release()
 
     threading.Thread(target=worker, name="backup", daemon=True).start()
@@ -446,7 +457,7 @@ def _check_db_file(path: Path) -> list[str]:
     with open(path, "rb") as f:
         if f.read(16) != b"SQLite format 3\x00":
             raise BackupError(f"Not a SQLite database: {path}")
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
     try:
         applied = [r[0] for r in conn.execute("SELECT filename FROM schema_migrations")]
     except sqlite3.Error as e:
@@ -496,21 +507,187 @@ def restore(source: str, *, with_media: bool = True) -> dict:
             side.unlink(missing_ok=True)
         shutil.copy2(db_file, dest)
 
-        restored_media = 0
-        if zf is not None and with_media:
-            root = config.media_root().resolve()
-            for m in media_members:
-                rel = m.filename[len("media/"):]
-                target = (root / rel).resolve()
-                if root not in target.parents:  # zip-slip guard: never write outside MEDIA_ROOT
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(m) as a, open(target, "wb") as b:
-                    shutil.copyfileobj(a, b)
-                restored_media += 1
+        restored_media = _unpack_media(zf, media_members) if zf is not None and with_media else 0
         if zf is not None:
             zf.close()
     return {"database": str(dest), "photos": restored_media, "photos_in_backup": len(media_members)}
+
+
+def _unpack_media(zf: zipfile.ZipFile, members: list[zipfile.ZipInfo]) -> int:
+    """Write the photos into MEDIA_ROOT (same names = same files). Never writes outside it."""
+    root = config.media_root().resolve()
+    done = 0
+    for i, m in enumerate(members, 1):
+        rel = m.filename[len("media/"):]
+        target = (root / rel).resolve()
+        if root not in target.parents:  # zip-slip guard
+            continue
+        if i == 1 or i % 25 == 0 or i == len(members):
+            _step(f"Restoring photos… {i} of {len(members)}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(m) as a, open(target, "wb") as b:
+            shutil.copyfileobj(a, b)
+        done += 1
+    return done
+
+
+# --------------------------------------------------------------------------- #
+# In-app restore: stage -> check -> (confirm) -> apply, while the app keeps running
+# --------------------------------------------------------------------------- #
+KEEP_SAFETY_COPIES = 3
+
+
+def staging_dir() -> Path:
+    d = config.DB_PATH.parent / "restore-staging"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def staged_file() -> Path:
+    return staging_dir() / "staged-backup"
+
+
+def clear_staged() -> None:
+    for p in staging_dir().glob("*"):
+        p.unlink(missing_ok=True)
+
+
+def current_counts() -> dict:
+    conn = get_connection()
+    try:
+        def n(sql: str) -> int:
+            try:
+                return conn.execute(sql).fetchone()[0]
+            except sqlite3.Error:
+                return 0
+        return {
+            "recipes": n("SELECT COUNT(*) FROM recipe WHERE status = 'published'"),
+            "places": n("SELECT COUNT(*) FROM place WHERE status = 'published'"),
+        }
+    finally:
+        conn.close()
+
+
+def inspect_backup(path: Path) -> dict:
+    """Check a backup file and describe it, changing nothing. Raises BackupError (with a message
+    meant for the admin) if it can't be restored by this version of the app."""
+    if not path.is_file():
+        raise BackupError(f"Backup not found: {path.name}")
+    manifest: dict = {}
+    media: list[zipfile.ZipInfo] = []
+    with tempfile.TemporaryDirectory(dir=staging_dir()) as td:
+        if zipfile.is_zipfile(path):
+            kind = "zip"
+            with zipfile.ZipFile(path) as zf:
+                names = zf.namelist()
+                if "recipes.db" not in names:
+                    raise BackupError("That zip isn't a recipe backup (no recipes.db inside).")
+                db_file = Path(td) / "recipes.db"
+                with zf.open("recipes.db") as a, open(db_file, "wb") as b:
+                    shutil.copyfileobj(a, b)
+                media = [m for m in zf.infolist() if m.filename.startswith("media/") and not m.is_dir()]
+                if "manifest.json" in names:
+                    try:
+                        manifest = json.loads(zf.read("manifest.json"))
+                    except ValueError:
+                        manifest = {}
+        else:
+            kind, db_file = "db", path
+            with open(path, "rb") as f:
+                if f.read(16) != b"SQLite format 3\x00":
+                    raise BackupError("That file isn't a recipe backup. Choose the recipes-backup.zip file.")
+        _check_db_file(db_file)
+        counts = _db_counts(db_file)
+    created = manifest.get("created_at") or datetime.fromtimestamp(
+        path.stat().st_mtime, tz=timezone.utc).isoformat(timespec="seconds")
+    return {
+        "kind": kind,
+        "created_at": created,
+        "size_bytes": path.stat().st_size,
+        "recipes": counts["recipes"],
+        "places": counts["places"],
+        "media_files": len(media),
+        "media_bytes": sum(m.file_size for m in media),
+        "includes_media": bool(media),
+    }
+
+
+def _save_current_copy() -> str | None:
+    """Keep the library as it is right now, so a restore can be undone. Newest few are kept."""
+    if not config.DB_PATH.exists() or config.DB_PATH.stat().st_size == 0:
+        return None
+    dest = config.DB_PATH.parent / f"before-restore-{datetime.now():%Y%m%d-%H%M%S}.db"
+    snapshot(dest)
+    old = sorted(config.DB_PATH.parent.glob("before-restore-*.db"))
+    for p in old[: max(0, len(old) - KEEP_SAFETY_COPIES)]:
+        p.unlink(missing_ok=True)
+    return str(dest)
+
+
+def _replace_live_db(db_file: Path) -> None:
+    """Swap the library's contents with SQLite's backup API: transactional, safe while the app
+    is running (a plain file copy over a live WAL database is not)."""
+    src = sqlite3.connect(f"{db_file.resolve().as_uri()}?mode=ro", uri=True)
+    dest = sqlite3.connect(str(config.DB_PATH), timeout=60)
+    try:
+        src.backup(dest)
+    finally:
+        dest.close()
+        src.close()
+
+
+def apply_restore_live(source: Path, *, with_media: bool = True) -> dict:
+    """Restore `source` over the running library. The caller holds the backup lock."""
+    info = inspect_backup(source)  # re-check: never trust the staged file blindly
+    _step("Saving a copy of the current library…")
+    safety = _save_current_copy()
+    photos = 0
+    with tempfile.TemporaryDirectory(dir=staging_dir()) as td:
+        zf = None
+        try:
+            if info["kind"] == "zip":
+                zf = zipfile.ZipFile(source)
+                db_file = Path(td) / "recipes.db"
+                with zf.open("recipes.db") as a, open(db_file, "wb") as b:
+                    shutil.copyfileobj(a, b)
+            else:
+                db_file = source
+            _step("Replacing the library…")
+            _replace_live_db(db_file)
+            from .migrations_runner import run_migrations
+
+            run_migrations()  # an older backup gets the newer tables it's missing
+            if zf is not None and with_media:
+                members = [m for m in zf.infolist() if m.filename.startswith("media/") and not m.is_dir()]
+                photos = _unpack_media(zf, members)
+        finally:
+            if zf is not None:
+                zf.close()
+    return {**info, "photos_restored": photos, "safety_copy": safety}
+
+
+def start_restore(source: Path, with_media: bool) -> bool:
+    """Apply a staged backup on a worker thread; the page polls /status. False if a backup or
+    another restore is in flight."""
+    if not _lock.acquire(blocking=False):
+        return False
+    _begin("restore")
+    _state["restore_result"] = None
+
+    def worker() -> None:
+        try:
+            result = apply_restore_live(source, with_media=with_media)
+            _state["restore_result"] = {"ok": True, **result}
+            clear_staged()
+        except Exception as e:
+            msg = str(e)[:300] or e.__class__.__name__
+            _state["restore_result"] = {"ok": False, "message": msg}
+        finally:
+            _end()
+            _lock.release()
+
+    threading.Thread(target=worker, name="restore", daemon=True).start()
+    return True
 
 
 def fetch_from_drive(dest_dir: Path) -> Path:
