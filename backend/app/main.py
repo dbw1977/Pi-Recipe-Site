@@ -6,6 +6,7 @@ Binds 0.0.0.0 for LAN access (CLAUDE.md rule 9); reach it at http://recipes.loca
 """
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, thumbnails
+from . import backup_scheduler, config, thumbnails
 from .migrations_runner import run_migrations
 from .routers import backups, drafts, featured, google, imports, meals, media, places, recipes, tags
 
@@ -21,7 +22,12 @@ from .routers import backups, drafts, featured, google, imports, meals, media, p
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     run_migrations()  # apply numbered SQL + seed taxonomy at startup
-    yield
+    # Weekly backups run from inside the app (settings come from the admin console).
+    scheduler = asyncio.create_task(backup_scheduler.scheduler_loop())
+    try:
+        yield
+    finally:
+        scheduler.cancel()
 
 
 def create_app() -> FastAPI:

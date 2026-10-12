@@ -142,10 +142,28 @@ export interface BackupEntry {
   created_at: string;
 }
 
+export interface BackupSettings {
+  enabled: boolean; // weekly automatic backups (manual "Back up now" always works)
+  local_enabled: boolean;
+  local_dir: string;
+  drive_enabled: boolean;
+  drive_folder_name: string;
+  include_media: boolean; // photos too — needed to rebuild the library on a new Pi
+  day: number; // 0 = Monday … 6 = Sunday
+  hour: number; // 0-23, the Pi's local time
+}
+
 export interface BackupStatus {
+  settings: BackupSettings;
+  day_names: string[];
   local: BackupEntry | null;
   drive: BackupEntry | null;
-  drive_configured: boolean;
+  running: boolean;
+  step: string; // live progress while running, e.g. "Packing photos… 12 of 80"
+  next_run: string | null; // local time, ISO minutes
+  media: { files: number; bytes: number } | null; // null while a backup is running
+  local_same_disk: boolean; // true = the backup folder is on the Pi's own disk
+  google: { configured: boolean; authorized: boolean };
 }
 
 // --- Places (Chunk D) -------------------------------------------------------
@@ -575,7 +593,11 @@ export const api = {
   backupStatus(): Promise<BackupStatus> {
     return req<BackupStatus>('/api/backups/status');
   },
-  runBackup(kind: 'local' | 'drive' | 'both'): Promise<BackupStatus> {
-    return req<BackupStatus>('/api/backups/run', { method: 'POST', body: JSON.stringify({ kind }) });
+  saveBackupSettings(patch: Partial<BackupSettings>): Promise<BackupStatus> {
+    return req<BackupStatus>('/api/backups/settings', { method: 'PUT', body: JSON.stringify(patch) });
+  },
+  /** Starts a backup of every destination that's switched on; poll backupStatus() for progress. */
+  runBackup(): Promise<BackupStatus> {
+    return req<BackupStatus>('/api/backups/run', { method: 'POST', body: JSON.stringify({ kind: 'enabled' }) });
   },
 };

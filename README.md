@@ -189,11 +189,11 @@ bash ./models/download-ggml-model.sh base.en
 Then set `WHISPER_BIN=.../build/bin/whisper-cli` and `WHISPER_MODEL=.../models/ggml-base.en.bin`.
 (ffmpeg is used to convert audio to 16 kHz if it's installed: `sudo apt install ffmpeg`.)
 
-**Set up Google** (Drive import **and** the weekly Drive backup — one connection covers both):
+**Set up Google** (Drive import **and** Drive backup — one connection covers both):
 create an OAuth **Desktop app** client in Google Cloud (Google rejects `http://recipes.local`
 redirects, so the app uses a copy-paste code flow with a `localhost` redirect), download its
-`client_secret.json`, set `GOOGLE_CLIENT_SECRETS` (+ `DRIVE_FOLDER_ID` for import,
-`DRIVE_BACKUP_FOLDER_ID` for backup), restart, then **Settings → Google account → Connect
+`client_secret.json`, set `GOOGLE_CLIENT_SECRETS` (+ `DRIVE_FOLDER_ID` for import; the backup
+folder is chosen in the app), restart, then **Settings → Google account → Connect
 Google** in the app: approve in the popup, and paste back the code (or the whole `localhost`
 URL) from your browser's address bar. The import scan reads **only** the recipes folder and
 skips files it already imported.
@@ -214,9 +214,8 @@ Makes the app pleasant to live with and the data genuinely safe.
   on **local disk** (`THUMBS_DIR`); originals stay wherever `MEDIA_ROOT` points (e.g. the NAS).
 - **NAS media mount** — set `MEDIA_ROOT` to a mounted NAS path; the DB stores only relative
   paths, so originals resolve through the mount. The **database always stays on local disk**.
-- **Backups** — consistent `VACUUM INTO` snapshots (never a live-file copy): a nightly local
-  snapshot (keep last `BACKUP_KEEP`) and a weekly Google Drive copy that overwrites one file
-  in a dedicated folder (Drive keeps version history for rollback). Health shows in **Settings**.
+- **Backups** — set up in the app (**Settings → Backups**): one file, `recipes-backup.zip`
+  (database + photos), replaced each run. See [Backups](#backups-set-up-in-the-app) below.
 
 ### Mount the NAS for media (optional, OMV example)
 
@@ -228,64 +227,62 @@ sudo mount -a
 ```
 Then set `MEDIA_ROOT=/srv/nas/recipes/media` (and optionally `BACKUP_LOCAL_DIR=/srv/nas/recipes/backups`) in `.env` and restart. **Never** point `RECIPE_DB_PATH` at the NAS.
 
-### Run backups on a schedule (systemd timers)
+### Backups (set up in the app)
 
-The backup engine is a standalone script (`python -m app.backup`) so it runs even while the
-app restarts. Create a service + two timers (nightly local, weekly Drive):
+Everything is chosen on **Settings → Backups** — no `.env` or systemd editing:
+
+- **Where to save** — a folder (on this Pi, a NAS, or a USB drive), **and/or** Google Drive. The
+  folder path is test-written when you save, so a typo or an unmounted NAS is caught right
+  then. A folder on the Pi's own SD card is flagged: it would die with the Pi, so use a NAS/USB
+  path or add Google Drive. For Drive, give a folder name; the app creates it in your Drive
+  (Drive keeps version history of the file).
+- **One file, replaced each time** — `recipes-backup.zip` holds the database, the photos
+  (optional, on by default — needed to rebuild a new Pi), and a manifest. It's built under a
+  temporary name, checked, and only then swapped in, so a failed run never destroys the last
+  good backup. It needs free space of about the archive size; if there isn't enough, it fails
+  with a message instead of filling the disk.
+- **Weekly, automatically** — switch it on and pick a day and time. The app runs it itself
+  (checks every ~10 minutes). If the Pi was off at that time, it backs up when it's next
+  running. A failed destination retries hourly.
+- **Back up now** — runs whatever is switched on, in the background, with live progress.
+- Settings are stored in the database, so a restored library comes back already configured.
+
+> **Upgrading from the old setup?** The nightly/weekly systemd timers from earlier versions
+> (`recipes-backup-*.timer`) are no longer needed — turn them off so they don't double up:
+> `sudo systemctl disable --now recipes-backup-local.timer recipes-backup-drive.timer`.
+> Old dated `recipes-YYYYMMDD.db` files and a `recipes-backup.db` on Drive are left alone;
+> delete them whenever you like. The old `DRIVE_BACKUP_FOLDER_ID` setting is only a fallback
+> until you name a Drive folder in the app (Google's `drive.file` permission can't write into a
+> folder you made by hand, so the app makes its own).
+
+### Restore (after a hardware failure)
+
+Photos live outside the database, which is why the backup includes them. On the replacement Pi:
+install the app (this README), then:
 
 ```bash
-sudo tee /etc/systemd/system/recipes-backup@.service >/dev/null <<EOF
-[Unit]
-Description=Pi Recipe Site backup (%i)
-[Service]
-Type=oneshot
-User=$USER
-WorkingDirectory=$HOME/pi-recipe-site/backend
-ExecStart=$HOME/pi-recipe-site/backend/.venv/bin/python -m app.backup %i
-EOF
+sudo systemctl stop recipes
+cd ~/pi-recipe-site/backend && . .venv/bin/activate
 
-sudo tee /etc/systemd/system/recipes-backup-local.timer >/dev/null <<'EOF'
-[Unit]
-Description=Nightly local recipe backup
-[Timer]
-OnCalendar=*-*-* 02:30:00
-Persistent=true
-Unit=recipes-backup@local.service
-[Install]
-WantedBy=timers.target
-EOF
+# from a folder / NAS / USB:
+python -m app.backup restore /path/to/recipes-backup.zip --yes
+# or straight from Google Drive (connect Google in Settings first, using the same Google Cloud client):
+python -m app.backup restore-drive --yes
 
-sudo tee /etc/systemd/system/recipes-backup-drive.timer >/dev/null <<'EOF'
-[Unit]
-Description=Weekly Drive recipe backup
-[Timer]
-OnCalendar=Sun *-*-* 03:00:00
-Persistent=true
-Unit=recipes-backup@drive.service
-[Install]
-WantedBy=timers.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now recipes-backup-local.timer recipes-backup-drive.timer
-systemctl list-timers 'recipes-backup*'   # confirm next run times
+sudo systemctl start recipes
 ```
-(You can also tap **Back up now** in the app's Settings page to run one on demand.)
 
-### Restore
+- Add `--no-media` to restore only the database.
+- Your current database is kept next to the live one as `recipes.db.before-restore-<time>`, so a
+  mistaken restore can be undone.
+- It refuses a backup made by a **newer** version of the app (update first with
+  `scripts/update.sh`); older backups are fine — new migrations apply on start.
+- Not in the backup (they're secrets): `.env` and your Google connection. Reconnect Google in
+  Settings and re-enter the keys.
+- **Test a restore once, on purpose** — a backup you've never restored is a hope, not a backup.
 
-1. Stop the app: `sudo systemctl stop recipes`
-2. Pick a snapshot — a local one from `BACKUP_LOCAL_DIR` (e.g. `recipes-YYYYMMDD.db`), or
-   download `recipes-backup.db` from the Drive backup folder (or an older Drive *version*).
-3. Restore it over the live DB:
-   ```bash
-   cd ~/pi-recipe-site/backend && . .venv/bin/activate
-   python -m app.backup restore /path/to/recipes-YYYYMMDD.db --yes
-   ```
-4. Start the app: `sudo systemctl start recipes`
-
-Media paths still resolve because the NAS layout is unchanged. **Test a restore once on
-purpose** — a backup you've never restored is a hope, not a backup.
+The same engine is available from the command line: `python -m app.backup local|drive|both`
+(uses the destinations saved in Settings).
 
 ## Chunk D — Eat Out / Places (spec §14)
 

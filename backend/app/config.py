@@ -112,12 +112,15 @@ def thumbs_dir() -> Path:
     return THUMBS_DIR
 
 
-# Backups (spec §11). Local nightly snapshots go here (often the NAS mount); the DB
-# itself never lives here. Keep the last N. Weekly Drive backup overwrites one file in
-# a DEDICATED folder — separate from the import folder so the scanner never touches it.
+# Backups (spec §11). The destination folder, Drive folder name and weekly schedule are set in
+# the admin console (Settings → Backups) and stored in the DB. These env values are only the
+# starting defaults. The backup is ONE file, replaced each run; the DB itself never lives here.
 BACKUP_LOCAL_DIR = Path(
     os.environ.get("BACKUP_LOCAL_DIR", str(MEDIA_ROOT / "backups"))
 ).expanduser()
-BACKUP_KEEP = int(os.environ.get("BACKUP_KEEP", "7"))
+BACKUP_FILENAME = os.environ.get(
+    "BACKUP_FILENAME", os.environ.get("DRIVE_BACKUP_FILENAME", "recipes-backup.zip")
+).strip()
+# Legacy: a hand-made Drive folder id from the old setup. Used only until a folder is named
+# in the console (the app now creates its own folder — Google only lets it write into those).
 DRIVE_BACKUP_FOLDER_ID = os.environ.get("DRIVE_BACKUP_FOLDER_ID", "").strip()
-DRIVE_BACKUP_FILENAME = os.environ.get("DRIVE_BACKUP_FILENAME", "recipes-backup.db").strip()

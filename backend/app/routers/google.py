@@ -26,9 +26,9 @@ def status() -> dict:
         "configured": drive.client_configured(),          # client_secret.json present
         "authorized": authorized,                          # a Google account is connected
         "drive_import_folder": bool(config.DRIVE_FOLDER_ID),
-        "drive_backup_folder": bool(config.DRIVE_BACKUP_FOLDER_ID),
+        "drive_backup_folder": True,                       # the app makes its own folder by name
         "drive_import_ready": drive.available() and authorized,
-        "drive_backup_ready": bool(config.DRIVE_BACKUP_FOLDER_ID) and authorized,
+        "drive_backup_ready": drive.client_configured() and authorized,
     }
 
 
