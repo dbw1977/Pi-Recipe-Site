@@ -52,21 +52,22 @@ def connect(payload: ConnectIn) -> dict:
     raw = payload.code.strip()
     if not raw:
         raise HTTPException(status_code=400, detail="Paste the code (or the whole redirected URL).")
-    # Accept either a bare code or the full localhost redirect URL the browser landed on.
-    code = raw
+    # Accept either a bare code or the full localhost redirect URL the browser landed on. The URL
+    # also carries `state`, which tells us which sign-in link the code belongs to.
+    code, state = raw, None
     if "code=" in raw:
         parsed = urlparse.urlparse(raw)
-        query = parsed.query or raw.split("?", 1)[-1]
-        code = urlparse.parse_qs(query).get("code", [raw])[0]
+        query = urlparse.parse_qs(parsed.query or raw.split("?", 1)[-1])
+        code = query.get("code", [raw])[0]
+        state = query.get("state", [None])[0]
     try:
-        drive.finish_auth(code, config.GOOGLE_OAUTH_REDIRECT)
+        drive.finish_auth(code, config.GOOGLE_OAUTH_REDIRECT, state)
     except FeatureUnavailable as e:
         raise HTTPException(status_code=503, detail=e.message)
+    except drive.AuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail="Couldn't connect with that code (it may be expired — try again). " + str(e)[:200],
-        )
+        raise HTTPException(status_code=400, detail=f"Couldn't connect to Google: {str(e)[:200]}")
     return {"authorized": True}
 
 

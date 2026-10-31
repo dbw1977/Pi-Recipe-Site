@@ -698,14 +698,19 @@ def test_tick_does_nothing_while_weekly_is_off(client: TestClient):
 
 def test_tick_runs_a_due_backup_then_leaves_it_alone(client: TestClient):
     _recipe(client)
-    _configure(enabled=True)
-    started = backup_scheduler.tick(datetime.now())
+    # Pin the weekly slot to "this hour, this weekday" so the result doesn't depend on which day
+    # of the week the suite happens to run (a fixed Sunday slot made this flaky).
+    now = datetime.now()
+    _configure(enabled=True, day=now.weekday(), hour=now.hour)
+    started = backup_scheduler.tick(now)
     assert started == ["local"]
     _wait_idle()
     assert _archive_path().is_file()
-    # Done for this week: the next checks must not start another one.
-    assert backup_scheduler.tick(datetime.now()) == []
-    assert backup_scheduler.tick(datetime.now() + timedelta(days=3)) == []
+    # Done for this week: the next checks must not start another one...
+    assert backup_scheduler.tick(now) == []
+    assert backup_scheduler.tick(now + timedelta(days=3)) == []
+    # ...until the next weekly slot arrives.
+    assert backup_scheduler.tick(now + timedelta(days=7, minutes=5)) == ["local"]
 
 
 def test_tick_retries_after_an_hour_when_the_attempt_failed(client: TestClient, monkeypatch):

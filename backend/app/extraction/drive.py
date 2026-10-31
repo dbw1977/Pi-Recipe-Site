@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sqlite3
+import time
 from pathlib import Path
 
 from .. import config
@@ -21,9 +23,10 @@ from .tags import load_tag_index
 
 # readonly → scan the user's Recipes folder (import, §5c);
 # drive.file → create/overwrite the app's own backup file (§11). One consent covers both.
+FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"  # create/write files the app made (backups)
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/drive.file",
+    FILE_SCOPE,
 ]
 
 
@@ -104,17 +107,89 @@ def _make_flow(redirect_uri: str):
     )
 
 
+# Modern Google OAuth libraries add PKCE to the sign-in link: the code Google sends back is only
+# redeemable together with a secret ("code verifier") generated when the link was made. The link is
+# built in one request and the pasted code arrives in another, so remember each verifier here
+# (keyed by the link's `state`, which also appears in the address the person pastes).
+_PENDING_TTL = 30 * 60
+_MAX_PENDING = 5
+_pending: dict[str, tuple[str | None, float]] = {}
+_latest_state: str | None = None
+
+
+class AuthError(Exception):
+    """Connecting Google failed in a way the person can act on; the message is shown to them."""
+
+
+def _remember(state: str, verifier: str | None) -> None:
+    global _latest_state
+    now = time.time()
+    for k in [k for k, (_, t) in _pending.items() if now - t > _PENDING_TTL]:
+        del _pending[k]
+    while len(_pending) >= _MAX_PENDING:
+        del _pending[min(_pending, key=lambda k: _pending[k][1])]
+    _pending[state] = (verifier, now)
+    _latest_state = state
+
+
+def _recall(state: str | None) -> tuple[bool, str | None]:
+    """(found, verifier) for the link this code came from; with no state, the most recent link."""
+    key = state if state in _pending else _latest_state
+    entry = _pending.get(key) if key else None
+    if entry is None or time.time() - entry[1] > _PENDING_TTL:
+        return False, None
+    return True, entry[0]
+
+
 def auth_url(redirect_uri: str) -> str:
     _require_client_secrets()  # connecting only needs the client; folder is for scanning
     flow = _make_flow(redirect_uri)
-    url, _ = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="true")
+    url, state = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="true")
+    _remember(state, getattr(flow, "code_verifier", None))
     return url
 
 
-def finish_auth(code: str, redirect_uri: str) -> None:
+def _granted_scopes(flow) -> set[str]:
+    scope = (getattr(flow.oauth2session, "token", None) or {}).get("scope") or []
+    return set(scope.split() if isinstance(scope, str) else scope)
+
+
+def finish_auth(code: str, redirect_uri: str, state: str | None = None) -> None:
     _require_client_secrets()
+    found, verifier = _recall(state)
+    if not found:
+        raise AuthError(
+            "That sign-in link has expired or the app restarted since you started. "
+            "Tap Connect Google to start again, then paste the new address right away."
+        )
+    # Google returns only the permissions that were ticked; we check below that the one we need
+    # is among them instead of letting the library fail with an unhelpful warning.
+    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
     flow = _make_flow(redirect_uri)
-    flow.fetch_token(code=code)
+    kwargs = {"code": code}
+    if verifier:
+        kwargs["code_verifier"] = verifier
+    try:
+        flow.fetch_token(**kwargs)
+    except Exception as e:
+        text = f"{e.__class__.__name__} {e}".lower()
+        if "invalid_grant" in text:
+            raise AuthError(
+                "That code was already used or has expired. Tap Connect Google to start again, "
+                "then paste the new address right away."
+            ) from e
+        raise AuthError(f"Google didn't accept the code: {str(e)[:200]}") from e
+
+    if FILE_SCOPE not in _granted_scopes(flow):
+        raise AuthError(
+            "Google didn't grant permission to save files in your Drive. Start again and tick "
+            "every box on the permissions screen."
+        )
+    if not flow.credentials.refresh_token:
+        raise AuthError(
+            "Google didn't give a lasting sign-in. Remove “Recipe App” at myaccount.google.com/permissions, "
+            "then connect again."
+        )
     _token_path().parent.mkdir(parents=True, exist_ok=True)
     _token_path().write_text(flow.credentials.to_json())
 
