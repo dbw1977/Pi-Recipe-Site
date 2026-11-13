@@ -709,8 +709,10 @@ def test_tick_runs_a_due_backup_then_leaves_it_alone(client: TestClient):
     # Done for this week: the next checks must not start another one...
     assert backup_scheduler.tick(now) == []
     assert backup_scheduler.tick(now + timedelta(days=3)) == []
-    # ...until the next weekly slot arrives.
+    # ...until the next weekly slot arrives. That tick starts a real backup: let it finish rather
+    # than leave a thread running into the next test (it would write into that test's database).
     assert backup_scheduler.tick(now + timedelta(days=7, minutes=5)) == ["local"]
+    _wait_idle()
 
 
 def test_tick_retries_after_an_hour_when_the_attempt_failed(client: TestClient, monkeypatch):

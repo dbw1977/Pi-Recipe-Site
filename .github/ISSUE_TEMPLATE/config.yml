@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Read the README and the in-app Admin help first
+    url: https://github.com/dbw1977/Pi-Recipe-Site#readme
+    about: Install, update, backup/restore and troubleshooting steps are covered there, and in Settings → Admin help inside the app.

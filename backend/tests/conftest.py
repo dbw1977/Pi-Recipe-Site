@@ -28,3 +28,13 @@ def client(tmp_path: Path, monkeypatch) -> TestClient:
     app = main.create_app()
     with TestClient(app) as c:  # triggers startup -> migrations + seed
         yield c
+        # Backups/restores run on background threads that read config.DB_PATH when they run. If one
+        # outlives its test it would write into the NEXT test's database, so wait for it here.
+        import time
+
+        from app import backup
+
+        deadline = time.time() + 20
+        while backup.current()["running"] and time.time() < deadline:
+            time.sleep(0.02)
+        assert not backup.current()["running"], "a background backup/restore outlived its test"

@@ -1,0 +1,76 @@
+name: Release
+
+# Push a tag like v1.0.0 to publish a release: tests run first, then the frontend is built and
+# packaged with the backend into pi-recipe-site-<version>.tar.gz (+ checksum), the package is
+# unpacked and booted as a final check, and only then is the release published.
+#
+# To rehearse without publishing: Actions → Release → Run workflow (publish stays off). The
+# package is attached to the run as a downloadable artifact either way.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. v1.0.0 or v1.0.0-rc1"
+        required: true
+        default: "v0.0.0-dev"
+      publish:
+        description: "Publish a GitHub release (leave off to just build and test the package)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    name: Build, verify and publish
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to create the release
+    env:
+      VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+    steps:
+      - name: Check the version looks right
+        run: |
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] \
+            || { echo "::error::'$VERSION' isn't a version like v1.2.3 or v1.2.3-rc1"; exit 1; }
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build the package
+        run: scripts/build-release.sh "$VERSION"
+      - name: Check the checksum
+        working-directory: dist-release
+        run: sha256sum -c "pi-recipe-site-${VERSION}.tar.gz.sha256"
+      - name: Unpack it somewhere else and boot it
+        run: |
+          mkdir "$RUNNER_TEMP/verify"
+          tar -xzf "dist-release/pi-recipe-site-${VERSION}.tar.gz" -C "$RUNNER_TEMP/verify"
+          python -m pip install -r "$RUNNER_TEMP/verify/pi-recipe-site-${VERSION}/backend/requirements.txt"
+          scripts/smoke-test.sh "$RUNNER_TEMP/verify/pi-recipe-site-${VERSION}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi-recipe-site-${{ env.VERSION }}
+          path: dist-release/*
+          if-no-files-found: error
+      - name: Publish the release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=(--generate-notes --target "$GITHUB_SHA" --title "$VERSION")
+          [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
+          gh release create "$VERSION" dist-release/* "${flags[@]}"

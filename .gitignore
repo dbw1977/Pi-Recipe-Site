@@ -34,3 +34,6 @@ frontend/tsconfig.tsbuildinfo
 # OS / editor
 .DS_Store
 *.swp
+
+# Release packages built by scripts/build-release.sh
+dist-release/

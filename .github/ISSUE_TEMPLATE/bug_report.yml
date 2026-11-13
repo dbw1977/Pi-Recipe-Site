@@ -1,0 +1,65 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. This is a hobby project provided **as is, with no support guarantee** —
+        the more detail below, the more likely someone can help.
+
+        **Never paste API keys, tokens, or the contents of your `.env` file here.** Issues are public.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? Screenshots help.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        Installed from a release? Run `cat ~/pi-recipe-site/VERSION`.
+        Installed with git? Run `git -C ~/pi-recipe-site log -1 --oneline`.
+      placeholder: v1.0.0  or  a1b2c3d Add the thing
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware and operating system
+      placeholder: Raspberry Pi 4 (4 GB), Raspberry Pi OS Bookworm 64-bit
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Installing or updating
+        - Importing recipes (link, screenshot, video, voice)
+        - Google account or Google Drive
+        - Backups or restore
+        - Library, search, or recipe pages
+        - Eat Out (places)
+        - Meal planner or grocery list
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Recent log lines
+      description: >-
+        On the Pi, run `sudo journalctl -u recipes -n 50 --no-pager` and paste the output.
+        Look it over first and remove anything private.
+      render: shell
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed any API keys, tokens, and other secrets from what I pasted.
+          required: true
