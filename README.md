@@ -70,18 +70,50 @@ npm install
 npm run dev        # http://localhost:5173  (proxies /api → :8000)
 ```
 
-## Run it (production / on the Pi)
+## Install (on a Raspberry Pi, or any Debian/Ubuntu machine)
 
-Build the frontend once; FastAPI then serves everything on a single port.
+You need a Raspberry Pi 4 (or newer) running **Raspberry Pi OS "Bookworm" or newer** (Python 3.11+),
+connected to your home network, and a terminal on it (SSH is fine). Then:
 
 ```bash
-cd frontend && npm install && npm run build     # produces frontend/dist/
-cd ../backend && . .venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000  # serves API + the built app
+git clone https://github.com/dbw1977/Pi-Recipe-Site.git ~/pi-recipe-site
+cd ~/pi-recipe-site
+./install.sh
 ```
 
-Copy `.env.example` to `.env` and set at least `RECIPE_DB_PATH` to a **local-disk** path
-(never a NAS mount — see the golden rule below).
+Run it as your normal user (not with `sudo`) — it asks for your password when it needs it. It
+takes a few minutes, mostly the web app build, and finishes by printing the address to open on
+your phone, something like `http://raspberrypi.local`.
+
+**What it does:** installs the few system packages needed (Python tools, `curl`, `avahi` so the
+`.local` name works); builds the web app; creates the Python environment; keeps **all your data in
+`/var/lib/recipes`** (database, photos, thumbnails — on the Pi's own disk, never a NAS); writes a
+private `.env` for your settings; installs and starts a **service** (`recipes`) that runs on
+boot and restarts if it crashes; and waits until the app answers before telling you it's done.
+
+**Safe to run again** — it repairs a broken install and never overwrites your `.env`, your
+recipes, or an existing service file.
+
+| Option | What it does |
+|---|---|
+| `--port 8080` | Serve on another port (default 80). Use this if something else already uses port 80. |
+| `--with-video` | Also install `ffmpeg`, needed to import recipes from videos. |
+| `--hostname recipes` | Rename the machine so the app is at `http://recipes.local`. |
+| `--no-service` | Set everything up but don't install the service (you start it by hand). |
+| `--force-service` | Replace an existing service file with the installer's version. |
+| `--uninstall` | Remove the service. **Your recipes and photos are kept.** |
+| `--dry-run` | Show what would happen without changing anything. |
+
+**Next steps** are in the app: open **⚙ Settings → Admin help**. Link imports work right away;
+AI features (screenshots, video, recipe variations) need an Anthropic key, and backups need a
+destination — both are covered there.
+
+**Not a Pi?** Any Debian/Ubuntu machine with systemd works the same way. Docker isn't set up yet.
+
+### Running it by hand (development)
+
+See *Run it (development)* above. To run the built app without the service:
+`./install.sh --no-service`, then the `uvicorn` command it prints.
 
 ### Updating the Pi
 

@@ -79,3 +79,62 @@ jobs:
           cd frontend && npm ci && npm run build
       - name: Smoke test
         run: scripts/smoke-test.sh "$GITHUB_WORKSPACE"
+
+  installer:
+    # The real thing, on a clean Ubuntu machine with systemd: apt packages, a Python environment,
+    # a service on port 80, /var/lib/recipes — exactly what a first-time installer runs.
+    name: Installer on a clean machine (${{ matrix.source }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [checkout, package]   # a git clone, and an unpacked release package
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Get the app folder ready
+        run: |
+          if [[ "${{ matrix.source }}" == package ]]; then
+            scripts/build-release.sh v0.0.0-ci
+            mkdir "$HOME/unpacked"
+            tar -xzf dist-release/pi-recipe-site-v0.0.0-ci.tar.gz -C "$HOME/unpacked"
+            echo "APP=$HOME/unpacked/pi-recipe-site-v0.0.0-ci" >> "$GITHUB_ENV"
+          else
+            echo "APP=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
+      - name: Install
+        run: cd "$APP" && ./install.sh
+      - name: The service is running, enabled at boot, and serving the app
+        run: |
+          systemctl is-active --quiet recipes
+          systemctl is-enabled --quiet recipes
+          curl -fsS http://localhost/api/health | grep -q '"status":"ok"'
+          curl -fsS http://localhost/ | grep -q 'id="root"'
+          test -f /var/lib/recipes/recipes.db
+      - name: Running the installer again is safe and keeps your settings
+        run: |
+          echo "HOME_CITY=Austin" >> "$APP/.env"
+          before=$(sha256sum "$APP/.env")
+          cd "$APP" && ./install.sh
+          [[ "$before" == "$(sha256sum "$APP/.env")" ]] || { echo "::error::re-running changed .env"; exit 1; }
+          curl -fsS http://localhost/api/health | grep -q '"status":"ok"'
+      - name: The service comes back by itself after a crash
+        run: |
+          sudo systemctl kill -s KILL recipes
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost/api/health >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "::error::the service did not restart after being killed"; exit 1
+      - name: Uninstall removes the service but keeps the data
+        run: |
+          cd "$APP" && ./install.sh --uninstall
+          ! systemctl list-unit-files recipes.service | grep -q '^recipes.service'
+          test -f /var/lib/recipes/recipes.db
+      - name: Show the service log if anything above failed
+        if: failure()
+        run: sudo journalctl -u recipes -n 60 --no-pager || true

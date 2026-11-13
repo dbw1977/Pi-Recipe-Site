@@ -26,14 +26,14 @@ mkdir -p "$OUT/$NAME"
 tar -C "$ROOT" \
   --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' \
   --exclude='backend/tests' --exclude='backend/.venv' --exclude='backend/data' --exclude='backend/media' \
-  -cf - backend scripts frontend/dist .env.example LICENSE README.md \
+  -cf - backend scripts deploy install.sh frontend/dist .env.example LICENSE README.md \
   | tar -C "$OUT/$NAME" -xf -
 echo "$VERSION" > "$OUT/$NAME/VERSION"
 
 echo "==> Packing"
 tar -C "$OUT" -czf "$OUT/$NAME.tar.gz" "$NAME"
 (cd "$OUT" && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
-rm -rf "$OUT/$NAME"
+rm -rf "${OUT:?}/${NAME:?}"
 
 echo "==> Done:"
 ls -lh "$OUT"
