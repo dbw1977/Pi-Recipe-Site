@@ -10,6 +10,8 @@ a review/Drafts queue and auto-tagging; Recipe of the Week, thumbnails, and back
 an **Eat Out / Places** collection with a printable city export; a **weekly meal planner** with
 a consolidated grocery list; and an **AI recipe-variation** builder — plus device photo upload.
 
+Open source (MIT) — see [License & disclaimer](#license--disclaimer).
+
 > **Want to build your own?** See **[`BUILD-IT-YOURSELF.md`](BUILD-IT-YOURSELF.md)** — a
 > ready-to-paste prompt (and the file set) to hand this whole app to your own coding AI.
 
@@ -402,3 +404,22 @@ completes the six-chunk build (A–F).
   (needs exposing the site — deliberately deferred, spec §12).
 - Pantry inventory + receipt-photo restocking (candidate **Chunk G**), and auto-suggesting
   *which* recipes to cook — the planner is manual selection.
+
+---
+
+## License & disclaimer
+
+Open source under the **[MIT License](LICENSE)** — free to use, change and share, **provided
+as-is with no warranty of any kind**. In plain terms:
+
+- **You run it, you own it.** There's no support guarantee, and no promise it fits your
+  needs or won't lose data. **Keep your own backups and test a restore** (see
+  [Backups](#backups-set-up-in-the-app)).
+- **Home network only.** There is deliberately no login and no HTTPS. Never expose it to the
+  internet (no port-forwarding).
+- **Check recipes before you cook.** Imported and AI-generated recipes can be wrong —
+  amounts, temperatures, allergens, food safety. Treat them as drafts until you've read them.
+- **Bring your own keys and pay your own bills.** AI features use the Anthropic API and Drive
+  features use Google APIs, under those companies' terms, with your own accounts and usage costs.
+- **Not affiliated** with Anthropic, Google or Raspberry Pi. Third-party components keep their
+  own (permissive) licences.
