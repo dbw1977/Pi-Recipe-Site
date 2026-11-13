@@ -1,5 +1,7 @@
 # Pi Recipe Site
 
+[![CI](https://github.com/dbw1977/Pi-Recipe-Site/actions/workflows/ci.yml/badge.svg)](https://github.com/dbw1977/Pi-Recipe-Site/actions/workflows/ci.yml)
+
 A self-hosted, phone-first **food app** for two people on a home LAN, running on a
 Raspberry Pi 4. Built in six chunks (A → F); see `BUILD-ORDER.md` and `recipe-app-spec.md`.
 **`CLAUDE.md` holds the always-on guardrails.**
@@ -404,6 +406,34 @@ completes the six-chunk build (A–F).
   (needs exposing the site — deliberately deferred, spec §12).
 - Pantry inventory + receipt-photo restocking (candidate **Chunk G**), and auto-suggesting
   *which* recipes to cook — the planner is manual selection.
+
+---
+
+## Automated checks & releases (for maintainers)
+
+GitHub runs these for you (`.github/workflows/`):
+
+- **CI** — on every push and pull request: backend tests on Python 3.11 and 3.13, frontend tests
+  and build, and a **smoke test** that boots the app and checks it serves. A failing check shows
+  on the commit.
+- **Weekly fresh install** — Mondays: installs the *latest allowed* version of every dependency
+  with no caches, then tests, builds and boots the app. Dependencies are version ranges, so a new
+  library release can break a brand-new install with no change here; this catches it first.
+  (GitHub emails whoever last edited the schedule if it fails.)
+- **Release** — push a version tag and a package is built and published:
+
+  ```bash
+  git tag v1.0.0 && git push origin v1.0.0
+  ```
+
+  It runs CI, builds the frontend, and packs the backend + built frontend + scripts into
+  `pi-recipe-site-v1.0.0.tar.gz` (with a `.sha256`), then **unpacks it elsewhere and boots it**
+  before publishing — so the package is proven to run on its own, and installing it never needs
+  Node. Tags with a dash (`v1.0.0-rc1`) publish as pre-releases. To rehearse without publishing:
+  *Actions → Release → Run workflow* (leave "publish" off); the package is attached to the run.
+
+The same logic runs locally: `scripts/build-release.sh v0.0.0-test` builds the package, and
+`scripts/smoke-test.sh <folder>` boots any checkout or unpacked package and checks it.
 
 ---
 
