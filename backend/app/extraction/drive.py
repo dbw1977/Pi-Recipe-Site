@@ -81,6 +81,65 @@ def authorized() -> bool:
     return _token_path().exists()
 
 
+# When Google rejects the saved sign-in ("invalid_grant" on refresh) nothing but signing in again
+# fixes it: the sign-in expired, was revoked in the person's Google account, or — the classic — the
+# Google Cloud app is still in "Testing", where Google expires sign-ins after 7 days. We remember
+# that, so Settings can say "reconnect" instead of claiming "Connected", and so scheduled backups
+# stop retrying something that can't succeed.
+_RECONNECT_KEY = "google.reconnect_needed"
+RECONNECT_MESSAGE = (
+    "Google no longer accepts the saved sign-in (expired or revoked). In Settings → Google account: "
+    "Disconnect, then Connect Google again. If it keeps expiring after about a week, publish your "
+    "Google Cloud app (Audience → Publish app)."
+)
+
+
+def reconnect_needed() -> bool:
+    from ..db import get_connection
+
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT value FROM app_setting WHERE key = ?", (_RECONNECT_KEY,)).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+    return bool(row and row[0] == "1")
+
+
+def _set_reconnect_needed(needed: bool) -> None:
+    from ..db import get_connection
+
+    try:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO app_setting(key, value, updated_at) VALUES (?, ?, datetime('now')) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (_RECONNECT_KEY, "1" if needed else "0"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass  # never let bookkeeping hide the real problem
+
+
+def refresh_credentials(creds) -> None:
+    """Refresh an expired access token, turning Google's raw refusal into something actionable."""
+    from google.auth.exceptions import RefreshError
+    from google.auth.transport.requests import Request
+
+    try:
+        creds.refresh(Request())
+    except RefreshError as e:
+        if "invalid_grant" in str(e).lower():
+            _set_reconnect_needed(True)
+            raise FeatureUnavailable(RECONNECT_MESSAGE, needs="Google sign-in") from e
+        raise FeatureUnavailable(f"Google didn't accept the saved sign-in: {str(e)[:150]}", needs="Google sign-in") from e
+
+
 def _load_credentials():
     _require_configured()
     Credentials, _, Request, _, _ = _lazy_imports()
@@ -92,7 +151,7 @@ def _load_credentials():
         )
     creds = Credentials.from_authorized_user_file(str(_token_path()), SCOPES)
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        refresh_credentials(creds)
         _token_path().write_text(creds.to_json())
     return creds
 
@@ -192,11 +251,13 @@ def finish_auth(code: str, redirect_uri: str, state: str | None = None) -> None:
         )
     _token_path().parent.mkdir(parents=True, exist_ok=True)
     _token_path().write_text(flow.credentials.to_json())
+    _set_reconnect_needed(False)
 
 
 def disconnect() -> bool:
     """Remove the stored Google token (revokes the app's local access)."""
     p = _token_path()
+    _set_reconnect_needed(False)
     if p.exists():
         p.unlink()
         return True

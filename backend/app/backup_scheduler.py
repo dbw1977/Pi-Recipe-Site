@@ -9,6 +9,7 @@ from datetime import datetime
 
 from . import backup, backup_settings
 from .db import get_connection
+from .extraction import drive
 
 CHECK_EVERY_SECONDS = 600
 FIRST_CHECK_DELAY_SECONDS = 60  # let the app finish starting before doing any heavy work
@@ -33,6 +34,10 @@ def tick(now: datetime | None = None) -> list[str]:
     finally:
         conn.close()
     targets = backup_settings.due_targets(settings, now, last_ok, last_try)
+    # A dead Google sign-in can't succeed by retrying; the failure stays visible in Settings until
+    # someone reconnects, and the next due check after that picks Drive up again.
+    if "drive" in targets and drive.reconnect_needed():
+        targets.remove("drive")
     if targets and backup.start_background(set(targets)):
         return targets
     return []

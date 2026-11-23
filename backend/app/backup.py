@@ -267,7 +267,6 @@ def _write_local(settings: backup_settings.BackupSettings) -> tuple[Path, dict]:
 
 def _drive_service():
     try:
-        from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
     except ImportError:
@@ -277,7 +276,7 @@ def _drive_service():
         return None
     creds = Credentials.from_authorized_user_file(str(token), drive_mod.SCOPES)
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        drive_mod.refresh_credentials(creds)  # explains a dead sign-in instead of a raw Google error
         token.write_text(creds.to_json())
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 

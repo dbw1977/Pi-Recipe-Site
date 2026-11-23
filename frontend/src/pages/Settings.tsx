@@ -520,7 +520,7 @@ function GoogleCard() {
           🔒 Not set up yet. Add <code>GOOGLE_CLIENT_SECRETS</code> (a Desktop-app OAuth
           <code> client_secret.json</code>) to your <code>.env</code> on the Pi, then restart. See the runbook.
         </div>
-      ) : status.authorized ? (
+      ) : status.authorized && !status.reconnect_needed ? (
         <>
           <div className="flex items-center justify-between gap-3 border-t border-black/5 py-3 first:border-t-0">
             <div className="font-medium text-herb">✓ Connected</div>
@@ -537,7 +537,25 @@ function GoogleCard() {
           </ul>
         </>
       ) : !connecting ? (
-        <button onClick={startConnect} className="btn-primary">Connect Google</button>
+        status.authorized ? (
+          // A sign-in is saved but Google rejected it (expired or revoked) — don't claim "Connected".
+          <div className="space-y-3">
+            <div className="rounded-lg bg-ember/10 px-3 py-2 text-sm text-emberDark">
+              <div className="font-medium">⚠ Google stopped accepting your sign-in</div>
+              <p className="mt-1">
+                It expired or was revoked, so Drive backups and imports are paused until you sign in again.
+              </p>
+              <p className="mt-1">
+                If this happens about a week after connecting, your Google Cloud app is still in{' '}
+                <em>Testing</em>: publish it first (Google Auth Platform → Audience → <strong>Publish app</strong>),
+                then reconnect, or it will expire again.
+              </p>
+            </div>
+            <button onClick={startConnect} className="btn-primary">Reconnect Google</button>
+          </div>
+        ) : (
+          <button onClick={startConnect} className="btn-primary">Connect Google</button>
+        )
       ) : (
         <div className="space-y-2">
           <p className="text-sm text-muted">

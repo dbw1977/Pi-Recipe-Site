@@ -114,6 +114,7 @@ export interface PlaceImportResponse {
 export interface GoogleStatus {
   configured: boolean;
   authorized: boolean;
+  reconnect_needed: boolean; // a sign-in is saved, but Google no longer accepts it
   drive_import_folder: boolean;
   drive_backup_folder: boolean;
   drive_import_ready: boolean;

@@ -227,7 +227,9 @@ Then set `WHISPER_BIN=.../build/bin/whisper-cli` and `WHISPER_MODEL=.../models/g
 
 **Set up Google** (Drive import **and** Drive backup — one connection covers both):
 create an OAuth **Desktop app** client in Google Cloud (Google rejects `http://recipes.local`
-redirects, so the app uses a copy-paste code flow with a `localhost` redirect), download its
+redirects, so the app uses a copy-paste code flow with a `localhost` redirect), **publish the app**
+(Google Auth Platform → Audience → *Publish app*; left in *Testing*, Google expires the sign-in after
+7 days and Drive backups quietly start failing with `invalid_grant`), download its
 `client_secret.json`, set `GOOGLE_CLIENT_SECRETS` (+ `DRIVE_FOLDER_ID` for import; the backup
 folder is chosen in the app), restart, then **Settings → Google account → Connect
 Google** in the app: approve in the popup, and paste back the code (or the whole `localhost`

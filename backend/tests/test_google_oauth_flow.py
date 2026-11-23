@@ -40,7 +40,14 @@ class FakeGoogle:
                 form = {k: v[0] for k, v in parse_qs(body).items()}
                 outer.requests.append(form)
                 code = form.get("code", "")
-                if code == "used":
+                if form.get("grant_type") == "refresh_token":
+                    # Renewing an expired access token with the saved refresh token.
+                    if outer.refresh_ok:
+                        status, payload = 200, {"access_token": "ya29.renewed", "expires_in": 3599,
+                                                "scope": f"{DRIVE_FILE} {DRIVE_READONLY}", "token_type": "Bearer"}
+                    else:
+                        status, payload = 400, {"error": "invalid_grant", "error_description": "Bad Request"}
+                elif code == "used":
                     status, payload = 400, {"error": "invalid_grant", "error_description": "Bad Request"}
                 elif "code_verifier" not in form and outer.require_pkce:
                     status, payload = 400, {"error": "invalid_grant", "error_description": "Missing code verifier."}
@@ -58,6 +65,7 @@ class FakeGoogle:
                 self.wfile.write(data)
 
         self.require_pkce = True
+        self.refresh_ok = True   # False = Google rejects the saved refresh token (expired/revoked)
         self.server = HTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.server.server_port}/token"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()

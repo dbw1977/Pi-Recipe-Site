@@ -22,13 +22,15 @@ router = APIRouter(prefix="/api/google", tags=["google"])
 @router.get("/status")
 def status() -> dict:
     authorized = drive.authorized()
+    dead = authorized and drive.reconnect_needed()         # a token exists, but Google rejected it
     return {
         "configured": drive.client_configured(),          # client_secret.json present
         "authorized": authorized,                          # a Google account is connected
+        "reconnect_needed": dead,                          # ...and must sign in again
         "drive_import_folder": bool(config.DRIVE_FOLDER_ID),
         "drive_backup_folder": True,                       # the app makes its own folder by name
-        "drive_import_ready": drive.available() and authorized,
-        "drive_backup_ready": drive.client_configured() and authorized,
+        "drive_import_ready": drive.available() and authorized and not dead,
+        "drive_backup_ready": drive.client_configured() and authorized and not dead,
     }
 
 

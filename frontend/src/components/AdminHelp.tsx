@@ -125,6 +125,12 @@ sudo systemctl start recipes`}</Code>
         <li>After you approve, your browser lands on a <code>localhost</code> page that won’t load — that’s expected. Copy the code from the address bar (or paste the whole address) back into the app.</li>
         <li>If the card says it isn’t set up, the <code>GOOGLE_CLIENT_SECRETS</code> setting is missing from <code>.env</code> (a Desktop-app OAuth client file from Google Cloud).</li>
         <li>The connection isn’t part of backups. After restoring on a new Pi, connect again.</li>
+        <li>
+          <strong>Drive worked, then started failing with “invalid_grant” or “Google stopped accepting your sign-in”?</strong>{' '}
+          The saved sign-in expired or was revoked. The usual cause is the Google Cloud app still being in <em>Testing</em>,
+          where Google expires sign-ins after 7 days. In Google Cloud go to <strong>Google Auth Platform → Audience → Publish app</strong>,
+          then tap <strong>Reconnect Google</strong> above. (Removing the app at myaccount.google.com/permissions also causes it.)
+        </li>
       </ul>
     ),
   },
@@ -212,8 +218,9 @@ export default function AdminHelp({ backup }: { backup: BackupStatus | null }) {
             detail={`video ${imp.video ? 'ready' : 'not ready'} · narration transcription ${imp.voice_transcription ? 'ready' : 'not installed (optional)'}`} />
         )}
         {google && (
-          <Row ok={google.authorized} label="Google account"
-            detail={google.authorized ? 'connected' : google.configured ? 'not connected' : 'not set up'}
+          <Row ok={google.authorized && !google.reconnect_needed} label="Google account"
+            detail={google.reconnect_needed ? 'sign in again (Google stopped accepting the saved sign-in)'
+              : google.authorized ? 'connected' : google.configured ? 'not connected' : 'not set up'}
             onMore={() => show('google')} />
         )}
         {health && <Row ok={health.ok} label="Backups" detail={health.text} onMore={() => show('backups')} />}
