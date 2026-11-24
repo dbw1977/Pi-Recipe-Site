@@ -1,0 +1,17 @@
+# Companion to recipes.service, installed only when the app folder lives on a separate drive
+# (a USB disk, say) rather than the Pi's own memory card.
+#
+# Why it exists: if that drive is missing or not yet mounted when the Pi boots, systemd refuses to
+# start the app ("Dependency failed") and does NOT try again when the drive comes back. This runs
+# every few minutes (see the .timer) and, when the app isn't running, mounts the drive if needed
+# and starts the app. It does nothing while the app is up, or if you have disabled the app.
+#
+# To keep the app off on purpose:  sudo systemctl disable --now @SERVICE@
+[Unit]
+Description=Start Pi Recipe Site once its drive is available
+
+[Service]
+Type=oneshot
+# Quiet the journal: this runs every few minutes and almost always has nothing to do.
+LogLevelMax=warning
+ExecStart=/bin/sh -c 'systemctl is-enabled --quiet @SERVICE@ || exit 0; systemctl is-active --quiet @SERVICE@ && exit 0; mountpoint -q @MOUNT@ || timeout 30 mount @MOUNT@ 2>/dev/null; systemctl start --no-block @SERVICE@'

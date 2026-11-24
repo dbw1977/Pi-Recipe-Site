@@ -110,6 +110,20 @@ destination — both are covered there.
 
 **Not a Pi?** Any Debian/Ubuntu machine with systemd works the same way. Docker isn't set up yet.
 
+### If the app lives on a USB or NAS drive
+
+It's best to keep the app folder on the Pi's own memory card. If you do keep it on a separate drive,
+two things protect you when that drive drops out (a bad cable, a power blip):
+
+- **It starts again by itself.** When the app folder is on a separate mount, `./install.sh` also
+  installs `recipes-retry.timer`. If the app isn't running, it mounts the drive (if needed) and starts the
+  app, checking every 2 minutes. To keep the app off on purpose, use
+  `sudo systemctl disable --now recipes` (a plain `stop` would be undone within 2 minutes).
+  To pick this up on an existing install: `./install.sh --force-service`.
+- **Your photos and Google sign-in can live on the memory card.** `scripts/move-data-local.sh` copies
+  them to `/var/lib/recipes` (next to the database), switches `.env` over, and restarts. It copies, never
+  deletes, and `--check` shows the plan without changing anything.
+
 ### Running it by hand (development)
 
 See *Run it (development)* above. To run the built app without the service:

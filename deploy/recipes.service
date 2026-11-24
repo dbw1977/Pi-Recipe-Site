@@ -7,6 +7,9 @@
 Description=Pi Recipe Site
 After=network-online.target
 Wants=network-online.target
+# If the app folder is on a separate drive, don't start until that drive is mounted. (If the drive is
+# missing at boot, systemd skips the start; recipes-retry.timer, installed by install.sh, tries again.)
+RequiresMountsFor=@APP_DIR@
 
 [Service]
 User=@USER@

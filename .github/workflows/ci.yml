@@ -130,10 +130,30 @@ jobs:
             sleep 1
           done
           echo "::error::the service did not restart after being killed"; exit 1
+      - name: The auto-restart timer brings the app back after its drive returns
+        run: |
+          # Forced on here; on a real Pi it's installed only when the app folder is on a separate drive.
+          cd "$APP" && RECIPES_RETRY_UNITS=1 ./install.sh
+          systemctl is-enabled recipes-retry.timer
+          # Simulate "the app didn't start because its drive wasn't there": it's stopped; the check starts it.
+          sudo systemctl stop recipes
+          sudo systemctl start recipes-retry.service
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost/api/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://localhost/api/health | grep -q '"status":"ok"'
+          # ...but if the owner turned the app off on purpose, the check must leave it off.
+          sudo systemctl disable --now recipes
+          sudo systemctl start recipes-retry.service
+          sleep 4
+          ! curl -fsS http://localhost/api/health >/dev/null 2>&1
+          sudo systemctl enable --now recipes
       - name: Uninstall removes the service but keeps the data
         run: |
           cd "$APP" && ./install.sh --uninstall
           ! systemctl list-unit-files recipes.service | grep -q '^recipes.service'
+          ! test -e /etc/systemd/system/recipes-retry.timer
           test -f /var/lib/recipes/recipes.db
       - name: Show the service log if anything above failed
         if: failure()

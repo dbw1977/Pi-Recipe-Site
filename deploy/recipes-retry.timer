@@ -1,0 +1,10 @@
+# Runs recipes-retry.service a couple of minutes after boot and every 2 minutes after that.
+[Unit]
+Description=Check that Pi Recipe Site is running
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+
+[Install]
+WantedBy=timers.target

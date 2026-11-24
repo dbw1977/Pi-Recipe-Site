@@ -76,14 +76,24 @@ render_unit() {
   sed -e "s|@USER@|$RUN_USER|g" -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@PORT@|$PORT|g" "$APP_DIR/deploy/recipes.service"
 }
 
+# A companion timer that restarts the app after its drive comes back. Only needed when the app folder
+# is on a separate disk (a USB drive) rather than the Pi's own memory card. RECIPES_RETRY_UNITS=1 forces it on.
+RETRY_SVC="${SERVICE}-retry.service"; RETRY_TIMER="${SERVICE}-retry.timer"
+APP_MOUNT="$(findmnt -no TARGET -T "$APP_DIR" 2>/dev/null || echo /)"
+want_retry_units() { [[ "$APP_MOUNT" != "/" || "${RECIPES_RETRY_UNITS:-0}" == "1" ]]; }
+render_retry() { # $1 = deploy file name
+  sed -e "s|@SERVICE@|$SERVICE|g" -e "s|@MOUNT@|$APP_MOUNT|g" "$APP_DIR/deploy/$1"
+}
+
 if (( PRINT_UNIT )); then render_unit; exit 0; fi
 
 # ---------------------------------------------------------------- uninstall
 if (( UNINSTALL )); then
   step "Removing the $SERVICE service"
   [[ -f "$UNIT_PATH" ]] || { ok "No service file at $UNIT_PATH — nothing to remove."; }
+  run sudo systemctl disable --now "$RETRY_TIMER" 2>/dev/null || true
   run sudo systemctl disable --now "$SERVICE" 2>/dev/null || true
-  run sudo rm -f "$UNIT_PATH"
+  run sudo rm -f "$UNIT_PATH" "/etc/systemd/system/$RETRY_SVC" "/etc/systemd/system/$RETRY_TIMER"
   run sudo systemctl daemon-reload
   ok "Service removed. Your recipes and photos are still in $STATE_DIR, and the app in $APP_DIR."
   note "To delete everything: sudo rm -rf $STATE_DIR  and remove the $APP_DIR folder."
@@ -222,8 +232,23 @@ else
   unit_changed=1
   ok "Service file written"
 fi
+if want_retry_units; then
+  # Always rewritten (they're ours alone, so there's nothing of yours to protect).
+  if (( DRY_RUN )); then echo "  + write the $RETRY_TIMER auto-restart timer"; else
+    render_retry recipes-retry.service | sudo tee "/etc/systemd/system/$RETRY_SVC" >/dev/null
+    render_retry recipes-retry.timer   | sudo tee "/etc/systemd/system/$RETRY_TIMER" >/dev/null
+  fi
+  unit_changed=1
+  retry_on=1
+else
+  retry_on=0
+fi
 (( unit_changed )) && run sudo systemctl daemon-reload
 run sudo systemctl enable "$SERVICE" >/dev/null 2>&1 || true
+if (( retry_on )); then
+  run sudo systemctl enable --now "$RETRY_TIMER" >/dev/null 2>&1 || true
+  ok "The app is on a separate drive ($APP_MOUNT), so it will restart by itself if that drive drops out and comes back"
+fi
 run sudo systemctl restart "$SERVICE"
 
 # ---------------------------------------------------------------- wait until it answers
