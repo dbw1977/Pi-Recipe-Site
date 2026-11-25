@@ -3,13 +3,15 @@
 #
 #   ~/pi-recipe-site/scripts/update.sh          # app only: pull, deps, build, restart
 #   ~/pi-recipe-site/scripts/update.sh --apt    # ...after first upgrading system packages
+#   (once the app has been moved with scripts/move-app-local.sh:  recipes-update  /  recipes-update --apt)
 #
 # `apt upgrade` on its own only updates Debian packages (ffmpeg, avahi, …). It does NOT pull
 # our code, rebuild the frontend, or restart the service — this script does all of that, so
 # new features (and their DB migrations, applied at startup) go live in a single step.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# readlink -f: this script is also reachable as /usr/local/bin/recipes-update (a symlink).
+REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 SERVICE="${RECIPES_SERVICE:-recipes}"
 
 if [[ "${1:-}" == "--apt" ]]; then

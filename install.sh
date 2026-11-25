@@ -242,6 +242,12 @@ if want_retry_units; then
   retry_on=1
 else
   retry_on=0
+  # The app moved onto the memory card: an earlier auto-restart timer is no longer needed.
+  if [[ -f "/etc/systemd/system/$RETRY_TIMER" ]]; then
+    run sudo systemctl disable --now "$RETRY_TIMER" 2>/dev/null || true
+    run sudo rm -f "/etc/systemd/system/$RETRY_SVC" "/etc/systemd/system/$RETRY_TIMER"
+    unit_changed=1
+  fi
 fi
 (( unit_changed )) && run sudo systemctl daemon-reload
 run sudo systemctl enable "$SERVICE" >/dev/null 2>&1 || true

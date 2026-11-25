@@ -149,6 +149,16 @@ jobs:
           sleep 4
           ! curl -fsS http://localhost/api/health >/dev/null 2>&1
           sudo systemctl enable --now recipes
+      - name: Moving the app onto the memory card keeps it running from the new place
+        run: |
+          cd "$APP" && RECIPES_DEST=/opt/pi-recipe-ci ./scripts/move-app-local.sh
+          systemctl show recipes -p ExecStart --value | grep -q /opt/pi-recipe-ci
+          curl -fsS http://localhost/api/health | grep -q '"status":"ok"'
+          test ! -e /opt/pi-recipe-ci/frontend/node_modules
+          test -L /usr/local/bin/recipes-update
+          test -f /var/lib/recipes/recipes.db
+          # The auto-restart timer is only for apps on a separate drive, so the move removes it.
+          ! test -e /etc/systemd/system/recipes-retry.timer
       - name: Uninstall removes the service but keeps the data
         run: |
           cd "$APP" && ./install.sh --uninstall

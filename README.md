@@ -123,6 +123,10 @@ two things protect you when that drive drops out (a bad cable, a power blip):
 - **Your photos and Google sign-in can live on the memory card.** `scripts/move-data-local.sh` copies
   them to `/var/lib/recipes` (next to the database), switches `.env` over, and restarts. It copies, never
   deletes, and `--check` shows the plan without changing anything.
+- **Or move the whole app onto the memory card** (the cleanest fix). After the data move above, run
+  `scripts/move-app-local.sh`. It copies the code to `/opt/pi-recipe-site`, builds a fresh Python
+  environment there, points the service at it, and adds a `recipes-update` command that works even when the
+  drive is missing. It copies (your old folder stays), and `--check` shows the plan first.
 
 ### Running it by hand (development)
 
